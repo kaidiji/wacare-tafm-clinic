@@ -1,75 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Info, Leaf, X } from 'lucide-react';
-import { LifestyleFocus, TaskCategory } from '../types';
+import { ExercisePrescriptionDetails, PrescriptionTask } from '../types';
+import {
+  AdvancedPrescriptionSection,
+  getPrescriptionGroupsForInterests,
+  GreenPrescriptionGroup,
+} from '../utils/greenPrescriptionCatalog';
+import { formatExercisePrescription, PrescriptionSelection } from '../utils/greenPrescriptionDomain';
 
-export interface SelectedPrescription {
-  focus: string;
-  text: string;
-  level: '基本處方' | '加強處方';
-  category: TaskCategory;
-}
+export type SelectedPrescription = PrescriptionSelection;
 
-interface AdvancedSection {
-  title: string;
-  options: string[];
-}
+type ExerciseField = keyof ExercisePrescriptionDetails;
+type ExerciseDraft = ExercisePrescriptionDetails & { customExerciseType: string };
 
-interface PrescriptionGroup {
-  focus: string;
-  surveyFocus: LifestyleFocus;
-  category: TaskCategory;
-  basic: string[];
-  advanced: AdvancedSection[];
-}
+const EMPTY_EXERCISE_DRAFT: ExerciseDraft = {
+  exerciseType: '',
+  frequency: '',
+  duration: '',
+  customExerciseType: '',
+};
 
-const GROUPS: PrescriptionGroup[] = [
-  {
-    focus: '飲食',
-    surveyFocus: '飲食習慣',
-    category: '自我管理教育',
-    basic: ['每日攝取至少 3 份蔬菜、2 份水果', '減少高油、高鹽食物', '減少精緻澱粉及含糖飲料', '減少紅肉及加工食品攝取'],
-    advanced: [{ title: '個別化加強處方', options: ['以植物性為主，採均衡、多樣化飲食', '適量攝取植物性蛋白質、堅果及優質植物油', '減少外食頻率', '減少宵夜及不必要點心', '控制甜食攝取', '體重管理飲食調整', '轉介營養師諮詢', '其它'] }],
-  },
-  {
-    focus: '身體活動',
-    surveyFocus: '運動習慣',
-    category: '身體活動',
-    basic: ['每週累積至少 150 分鐘中等強度有氧運動', '依個人體能及健康狀況逐步增加活動量'],
-    advanced: [
-      { title: '運動類型', options: ['有氧運動（如快走、慢跑、游泳、球類運動）', '重量訓練', '伸展運動（如瑜珈、皮拉提斯）', '氣功、太極', '其他'] },
-      { title: '建議頻率', options: ['每週 1-2 天', '每週 3-4 天', '每週 5-6 天', '每天'] },
-      { title: '每次時間', options: ['10-20 分鐘', '20-30 分鐘', '30-60 分鐘'] },
-    ],
-  },
-  {
-    focus: '睡眠',
-    surveyFocus: '睡眠品質',
-    category: '自我照護管理',
-    basic: ['建立規律作息及固定睡眠時間', '維持適當睡眠時數', '建立良好睡眠環境', '睡前進行放鬆活動（伸展、冥想、閱讀等）'],
-    advanced: [{ title: '個別化加強處方', options: ['固定起床時間', '睡前減少使用 3C 產品', '避免睡前攝取咖啡因', '轉介睡眠／減重專業門診', '其他'] }],
-  },
-  {
-    focus: '壓力管理',
-    surveyFocus: '壓力管理',
-    category: '個人發展',
-    basic: ['每週安排個人放鬆時間', '練習適合自己的壓力調適方法', '建立規律的休息與放鬆習慣'],
-    advanced: [{ title: '個別化加強處方', options: ['腹式呼吸訓練', '正念／冥想練習', '肌肉放鬆法', '參與紓壓或壓力管理課程', '心理諮商或相關專業轉介', '其他'] }],
-  },
-  {
-    focus: '正向社會連結',
-    surveyFocus: '增加人際互動',
-    category: '社交互動',
-    basic: ['維持與家人、朋友或他人的正向互動', '每週至少安排一次社交、社區或興趣活動', '建立適合自己的社會支持網絡'],
-    advanced: [{ title: '個別化加強處方', options: ['參與社區運動團體', '參與社區關懷據點活動', '參與興趣或學習團體', '參與志工服務', '參與藝文活動', '其他'] }],
-  },
-  {
-    focus: '避免危害物質使用',
-    surveyFocus: '戒菸／戒酒／戒檳榔',
-    category: '自我照護管理',
-    basic: ['避免或減少菸草、過量酒精及檳榔等危害健康物質', '減少環境毒素暴露，如空氣污染及室內污染', '依個人使用情形設定減量或戒除目標'],
-    advanced: [{ title: '個別化加強處方', options: ['訂定戒菸日期或減菸目標', '鼓勵戒菸並轉介戒菸服務', '轉介戒酒資源', '戒除檳榔', '提供成癮治療或相關專業轉介', '減少空污、二手菸及室內污染暴露', '其他'] }],
-  },
-];
+const exerciseFieldBySection: Record<string, ExerciseField> = {
+  推薦運動: 'exerciseType',
+  運動類型: 'exerciseType',
+  運動頻率: 'frequency',
+  建議頻率: 'frequency',
+  每次運動時間: 'duration',
+  每次時間: 'duration',
+};
+
+const normalizeLegacyExerciseValue = (field: ExerciseField, value: string) => {
+  if (field === 'frequency') return value.replace(/(\d)\s*-\s*(\d)/, '$1~$2');
+  if (field === 'duration') return value.replace(/\s+/g, '');
+  return value;
+};
+
+const basicDefinitionId = (group: GreenPrescriptionGroup, index: number) =>
+  `${group.surveyFocus}-basic-${index + 1}`;
+const advancedDefinitionId = (group: GreenPrescriptionGroup, sectionIndex: number, optionIndex: number) =>
+  `${group.surveyFocus}-advanced-${sectionIndex + 1}-${optionIndex + 1}`;
+const exerciseDefinitionId = (group: GreenPrescriptionGroup) => `${group.surveyFocus}-exercise-plan`;
 
 interface GreenPrescriptionModalProps {
   isOpen: boolean;
@@ -78,19 +48,9 @@ interface GreenPrescriptionModalProps {
   questionnaireTitle: string;
   submittedAt: string;
   interests: string[];
+  existingPrescriptions?: PrescriptionTask[];
   onConfirm: (items: SelectedPrescription[]) => void;
 }
-
-const normalizeSurveyFocus = (rawValue: string): LifestyleFocus | null => {
-  const value = rawValue.trim();
-  if (value.includes('戒菸') || value.includes('戒酒') || value.includes('戒檳榔') || value.includes('危害物質')) return '戒菸／戒酒／戒檳榔';
-  if (value.includes('人際') || value.includes('社交') || value.includes('社會連結')) return '增加人際互動';
-  if (value.includes('運動') || value.includes('身體活動')) return '運動習慣';
-  if (value.includes('飲食')) return '飲食習慣';
-  if (value.includes('睡眠')) return '睡眠品質';
-  if (value.includes('壓力')) return '壓力管理';
-  return null;
-};
 
 export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
   isOpen,
@@ -99,26 +59,61 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
   questionnaireTitle,
   submittedAt,
   interests,
+  existingPrescriptions = [],
   onConfirm,
 }) => {
-  const matchedGroups = useMemo(() => {
-    const normalizedInterests = new Set(interests.map(normalizeSurveyFocus).filter(Boolean));
-    return GROUPS.filter((group) => normalizedInterests.has(group.surveyFocus));
-  }, [interests]);
+  const matchedGroups = useMemo(() => getPrescriptionGroupsForInterests(interests), [interests]);
   const [selectedAdvanced, setSelectedAdvanced] = useState<Set<string>>(new Set());
   const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, ExerciseDraft>>({});
+
+  const optionKey = (group: GreenPrescriptionGroup, section: AdvancedPrescriptionSection, option: string) =>
+    `${group.focus}|${section.title}|${option}`;
 
   useEffect(() => {
-    if (isOpen) {
-      setSelectedAdvanced(new Set());
-      setOtherText({});
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+
+    const restoredSelections = new Set<string>();
+    const restoredOtherText: Record<string, string> = {};
+    const restoredExerciseDrafts: Record<string, ExerciseDraft> = {};
+    matchedGroups.forEach((group) => {
+      const existingForGroup = existingPrescriptions.filter(
+        (task) => task.prescriptionLevel === '加強處方' && task.prescriptionFocus === group.focus,
+      );
+      if (group.focus === '身體活動') {
+        const draft = { ...EMPTY_EXERCISE_DRAFT };
+        const structured = existingForGroup.find(
+          (task) => task.definitionId === exerciseDefinitionId(group) || !!task.exercisePrescription,
+        )?.exercisePrescription;
+        if (structured) {
+          const exerciseTypeOptions = group.advanced.find((section) => exerciseFieldBySection[section.title] === 'exerciseType')?.options ?? [];
+          const knownExerciseType = exerciseTypeOptions.includes(structured.exerciseType);
+          draft.exerciseType = knownExerciseType ? structured.exerciseType : '其他';
+          draft.customExerciseType = knownExerciseType ? '' : structured.exerciseType;
+          draft.frequency = normalizeLegacyExerciseValue('frequency', structured.frequency);
+          draft.duration = normalizeLegacyExerciseValue('duration', structured.duration);
+        }
+        restoredExerciseDrafts[group.focus] = draft;
+        return;
+      }
+      group.advanced.forEach((section, sectionIndex) => {
+        section.options.forEach((option, optionIndex) => {
+          const task = existingForGroup.find(
+            (item) => item.definitionId === advancedDefinitionId(group, sectionIndex, optionIndex),
+          );
+          if (!task) return;
+          const key = optionKey(group, section, option);
+          restoredSelections.add(key);
+          if (needsCustomText(option)) restoredOtherText[key] = task.description;
+        });
+      });
+    });
+    setSelectedAdvanced(restoredSelections);
+    setOtherText(restoredOtherText);
+    setExerciseDrafts(restoredExerciseDrafts);
+  }, [existingPrescriptions, isOpen, matchedGroups]);
 
   if (!isOpen) return null;
-
-  const optionKey = (group: PrescriptionGroup, section: AdvancedSection, option: string) =>
-    `${group.focus}|${section.title}|${option}`;
 
   const toggleAdvanced = (key: string) => {
     setSelectedAdvanced((current) => {
@@ -128,8 +123,20 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     });
   };
 
+  const updateExerciseDraft = (focus: string, field: keyof ExerciseDraft, value: string) => {
+    setExerciseDrafts((current) => ({
+      ...current,
+      [focus]: {
+        ...(current[focus] ?? EMPTY_EXERCISE_DRAFT),
+        [field]: value,
+        ...(field === 'exerciseType' && value !== '其他' ? { customExerciseType: '' } : {}),
+      },
+    }));
+  };
+
   const needsCustomText = (option: string) => option === '其他' || option === '其它';
   const hasIncompleteOther = matchedGroups.some((group) =>
+    group.focus !== '身體活動' &&
     group.advanced.some((section) =>
       section.options.some((option) => {
         const key = optionKey(group, section, option);
@@ -137,21 +144,81 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
       }),
     ),
   );
+  const hasIncompleteExercise = matchedGroups.some((group) => {
+    if (group.focus !== '身體活動') return false;
+    const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
+    const hasStarted = Boolean(draft.exerciseType || draft.frequency || draft.duration || draft.customExerciseType.trim());
+    if (!hasStarted) return false;
+    return !draft.exerciseType || !draft.frequency || !draft.duration || (draft.exerciseType === '其他' && !draft.customExerciseType.trim());
+  });
+  const completedExerciseSelectionCount = matchedGroups.filter((group) => {
+    if (group.focus !== '身體活動') return false;
+    const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
+    return Boolean(draft.exerciseType && draft.frequency && draft.duration && (draft.exerciseType !== '其他' || draft.customExerciseType.trim()));
+  }).length;
+  const hasIncompleteSelection = hasIncompleteOther || hasIncompleteExercise;
 
   const submit = () => {
-    if (!matchedGroups.length || hasIncompleteOther) return;
+    if (!matchedGroups.length || hasIncompleteSelection) return;
 
     const basicItems: SelectedPrescription[] = matchedGroups.flatMap((group) =>
-      group.basic.map((text) => ({ focus: group.focus, text, level: '基本處方', category: group.category })),
+      group.basic.map((text, index) => {
+        const definitionId = basicDefinitionId(group, index);
+        const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
+        return {
+          definitionId,
+          taskId: existing?.taskId ?? existing?.id,
+          prescriptionId: existing?.prescriptionId,
+          focus: group.focus,
+          text,
+          level: '基本處方',
+          category: group.category,
+        };
+      }),
     );
     const advancedItems: SelectedPrescription[] = matchedGroups.flatMap((group) =>
-      group.advanced.flatMap((section) =>
-        section.options.flatMap((option) => {
+      group.focus === '身體活動'
+        ? (() => {
+            const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
+            if (!draft.exerciseType && !draft.frequency && !draft.duration) return [];
+            if (!draft.exerciseType || !draft.frequency || !draft.duration) return [];
+            const exercisePrescription: ExercisePrescriptionDetails = {
+              exerciseType: draft.exerciseType === '其他' ? draft.customExerciseType.trim() : draft.exerciseType,
+              frequency: draft.frequency,
+              duration: draft.duration,
+            };
+            const definitionId = exerciseDefinitionId(group);
+            const existing = existingPrescriptions.find(
+              (task) => task.definitionId === definitionId || !!task.exercisePrescription,
+            );
+            return [{
+              definitionId,
+              taskId: existing?.taskId ?? existing?.id,
+              prescriptionId: existing?.prescriptionId,
+              focus: group.focus,
+              text: formatExercisePrescription(exercisePrescription),
+              level: '加強處方' as const,
+              category: group.category,
+              exercisePrescription,
+            }];
+          })()
+        : group.advanced.flatMap((section, sectionIndex) =>
+        section.options.flatMap((option, optionIndex) => {
           const key = optionKey(group, section, option);
           if (!selectedAdvanced.has(key)) return [];
+          const definitionId = advancedDefinitionId(group, sectionIndex, optionIndex);
+          const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
           const value = needsCustomText(option) ? otherText[key].trim() : option;
           const text = section.title === '個別化加強處方' ? value : `${section.title}：${value}`;
-          return [{ focus: group.focus, text, level: '加強處方' as const, category: group.category }];
+          return [{
+            definitionId,
+            taskId: existing?.taskId ?? existing?.id,
+            prescriptionId: existing?.prescriptionId,
+            focus: group.focus,
+            text,
+            level: '加強處方' as const,
+            category: group.category,
+          }];
         }),
       ),
     );
@@ -214,7 +281,49 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
                 </div>
 
                 <div className="space-y-4">
-                  {group.advanced.map((section) => (
+                  {group.focus === '身體活動' ? group.advanced.map((section) => {
+                    const field = exerciseFieldBySection[section.title];
+                    if (!field) return null;
+                    const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
+                    const hasStarted = Boolean(draft.exerciseType || draft.frequency || draft.duration || draft.customExerciseType.trim());
+                    const fieldIsIncomplete = hasStarted && (!draft[field] || (field === 'exerciseType' && draft[field] === '其他' && !draft.customExerciseType.trim()));
+                    return (
+                      <fieldset key={section.title}>
+                        <legend className="mb-2 text-sm font-bold text-zinc-700">{section.title}</legend>
+                        <div className="space-y-2">
+                          {section.options.map((option) => {
+                            const checked = draft[field] === option;
+                            return (
+                              <div key={option}>
+                                <label className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${checked ? 'border-[#f08327] bg-orange-50' : 'border-zinc-200 bg-white hover:border-orange-300'}`}>
+                                  <input
+                                    type="radio"
+                                    name={`exercise-${group.focus}-${field}`}
+                                    value={option}
+                                    checked={checked}
+                                    onChange={() => updateExerciseDraft(group.focus, field, option)}
+                                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#f08327]"
+                                  />
+                                  <span>{option}</span>
+                                </label>
+                                {field === 'exerciseType' && option === '其他' && checked && (
+                                  <input
+                                    type="text"
+                                    value={draft.customExerciseType}
+                                    onChange={(event) => updateExerciseDraft(group.focus, 'customExerciseType', event.target.value)}
+                                    placeholder="請輸入推薦運動"
+                                    className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-xs focus:border-[#f08327] focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                    autoFocus
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {fieldIsIncomplete && <p className="mt-2 text-xs font-medium text-red-600">請選擇{section.title}。</p>}
+                      </fieldset>
+                    );
+                  }) : group.advanced.map((section) => (
                     <div key={section.title}>
                       <h4 className="mb-2 text-sm font-bold text-zinc-700">{section.title}</h4>
                       <div className="space-y-2">
@@ -257,20 +366,21 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
 
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-6 py-4">
           <span className="text-sm text-zinc-500">
-            基本處方 {matchedGroups.reduce((sum, group) => sum + group.basic.length, 0)} 項・加強處方已選 {selectedAdvanced.size} 項
+            基本處方 {matchedGroups.reduce((sum, group) => sum + group.basic.length, 0)} 項・加強處方已選 {selectedAdvanced.size + completedExerciseSelectionCount} 項
           </span>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-zinc-300 px-5 py-2 text-sm font-bold text-zinc-600">取消</button>
             <button
               type="button"
               onClick={submit}
-              disabled={!matchedGroups.length || hasIncompleteOther}
+              disabled={!matchedGroups.length || hasIncompleteSelection}
               className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               確認指派
             </button>
           </div>
           {hasIncompleteOther && <p className="w-full text-right text-xs font-medium text-red-600">請填寫「其他」處方內容後再確認。</p>}
+          {hasIncompleteExercise && <p className="w-full text-right text-xs font-medium text-red-600">請完成推薦運動、運動頻率與每次運動時間後再確認。</p>}
         </footer>
       </div>
     </div>

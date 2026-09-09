@@ -78,11 +78,12 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
 
       if (!matchSearch) return false;
 
+      const prescriptionMetrics = calculateGreenPrescriptionMetrics(c);
       if (selectedFilter === '有處方') {
-        return c.prescriptionStatus.hasPrescription;
+        return prescriptionMetrics.assignedTaskCount > 0;
       }
       if (selectedFilter === '待指派處方') {
-        return !c.prescriptionStatus.hasPrescription;
+        return prescriptionMetrics.assignedTaskCount === 0;
       }
       if (selectedFilter === '需關注') {
         return c.bloodPressure.status === 'concern' || c.activity.status === 'concern';
@@ -411,7 +412,9 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredCases.map((caseItem) => (
+                filteredCases.map((caseItem) => {
+                  const prescriptionMetrics = calculateGreenPrescriptionMetrics(caseItem);
+                  return (
                   <tr
                     key={caseItem.id}
                     className="hover:bg-amber-50/40 transition-colors group"
@@ -515,9 +518,9 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
                     {visibleColumns.includes('綠色處方') && (
                       <td className="py-2 px-2 text-center align-middle hover:bg-[#ffe5d0]/50 transition-colors">
                         <GreenPrescriptionLight
-                          hasPrescription={caseItem.prescriptionStatus.hasPrescription}
-                          activeCount={calculateGreenPrescriptionMetrics(caseItem).assignedTaskCount}
-                          complianceRate={calculateGreenPrescriptionMetrics(caseItem).completionRate}
+                          hasPrescription={prescriptionMetrics.assignedTaskCount > 0}
+                          activeCount={prescriptionMetrics.assignedTaskCount}
+                          complianceRate={prescriptionMetrics.completionRate}
                           status={caseItem.prescriptionStatus.status}
                           onClick={() => onSelectCaseForPrescription(caseItem)}
                         />
@@ -696,7 +699,8 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
                       </td>
                     )}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

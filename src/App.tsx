@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { CaseOverview } from './components/CaseOverview';
@@ -9,22 +9,11 @@ import { MessagesView, ExportView, CoursesView, AiReplyView } from './components
 import { INITIAL_CASES } from './data/mockCases';
 import { CaseItem } from './types';
 import { synchronizePrescriptionStatus } from './utils/greenPrescriptionMetrics';
-
-const CASE_STORAGE_KEY = 'wapro-green-prescription-cases-v2';
-
-const loadCases = (): CaseItem[] => {
-  try {
-    const saved = window.localStorage.getItem(CASE_STORAGE_KEY);
-    if (!saved) return INITIAL_CASES.map(synchronizePrescriptionStatus);
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.map(synchronizePrescriptionStatus) : INITIAL_CASES.map(synchronizePrescriptionStatus);
-  } catch {
-    return INITIAL_CASES.map(synchronizePrescriptionStatus);
-  }
-};
+import { createPrototypeCases } from './utils/greenPrescriptionDomain';
 
 export default function App() {
-  const [cases, setCases] = useState<CaseItem[]>(loadCases);
+  // Prototype 操作只保留於本次頁面生命週期；重新整理時一律回到程式內建 Demo state。
+  const [cases, setCases] = useState<CaseItem[]>(() => createPrototypeCases(INITIAL_CASES));
   const [currentTab, setCurrentTab] = useState<string>('cases');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
@@ -33,10 +22,6 @@ export default function App() {
   const [editingCase, setEditingCase] = useState<CaseItem | null>(null);
   const [dataModalType, setDataModalType] = useState<'import' | 'connect' | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.localStorage.setItem(CASE_STORAGE_KEY, JSON.stringify(cases));
-  }, [cases]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -96,6 +81,7 @@ export default function App() {
                   onBack={() => setSelectedCaseId(null)}
                   onUpdateCase={handleUpdateCase}
                   onOpenMessages={() => setCurrentTab('messages')}
+                  onOpenExport={() => setCurrentTab('export')}
                 />
               ) : (
                 /* Home / Case Overview Table view (Attachment / Image 1) */

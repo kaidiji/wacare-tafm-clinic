@@ -25,6 +25,10 @@ export interface QuestionnaireRecord {
 
 export interface PrescriptionTask {
   id: string;
+  taskId?: string;
+  prescriptionId?: string;
+  definitionId?: string;
+  executionKind?: 'prescription' | 'course';
   category: TaskCategory;
   title: string;
   description: string;
@@ -42,8 +46,17 @@ export interface PrescriptionTask {
   assignedAt: string;
   rewardPoints?: number;
   sourceQuestionnaireId?: string;
+  sourceQuestionnaireTitle?: string;
+  sourceQuestionnaireSubmittedAt?: string;
   prescriptionLevel?: '基本處方' | '加強處方';
   prescriptionFocus?: string;
+  exercisePrescription?: ExercisePrescriptionDetails;
+}
+
+export interface ExercisePrescriptionDetails {
+  exerciseType: string;
+  frequency: string;
+  duration: string;
 }
 
 export interface ExecutionLog {
@@ -56,6 +69,33 @@ export interface ExecutionLog {
   type: 'live' | 'video' | 'custom';
   userNote?: string;
   doctorFeedback?: string;
+}
+
+export interface HistoricalPrescriptionItem {
+  id: string;
+  taskId?: string;
+  prescriptionId?: string;
+  sourceQuestionnaireId?: string;
+  category: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface HistoricalCourseItem {
+  id: string;
+  taskId?: string;
+  prescriptionId?: string;
+  sourceQuestionnaireId?: string;
+  title?: string;
+  completed: boolean;
+}
+
+export interface PrescriptionExecutionCycle {
+  id: string;
+  startDate: string;
+  endDate: string;
+  expertPrescriptions: HistoricalPrescriptionItem[];
+  courses: HistoricalCourseItem[];
 }
 
 export interface CaseItem {
@@ -146,4 +186,5 @@ export interface CaseItem {
   // Detailed Prescriptions
   prescriptions: PrescriptionTask[];
   executionLogs: ExecutionLog[];
+  executionHistory?: PrescriptionExecutionCycle[];
 }

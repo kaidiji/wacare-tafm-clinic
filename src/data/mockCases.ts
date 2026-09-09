@@ -42,11 +42,10 @@ export const INITIAL_CASES: CaseItem[] = [
     weather: { summary: '-', temp: undefined, status: 'none' },
     
     prescriptionStatus: {
-      hasPrescription: true,
-      activeCount: 1,
-      complianceRate: 80,
-      status: 'good',
-      lastAssignedDate: '2026/08/17',
+      hasPrescription: false,
+      activeCount: 0,
+      complianceRate: 0,
+      status: 'none',
     },
     userNotes: '',
     education: { completed: false },
@@ -59,25 +58,47 @@ export const INITIAL_CASES: CaseItem[] = [
     medicationStatus: '規律服藥',
     riskPrediction: '低風險',
     dietStatus: '正常',
-    prescriptions: [
+    prescriptions: [],
+    executionLogs: [],
+    executionHistory: [
       {
-        id: 'p-1',
-        category: '運動',
-        title: '每日超慢跑 20 分鐘',
-        description: '保持心率 110-120 bpm',
-        frequency: '每日',
-        durationMinutes: 20,
-        targetCount: 7,
-        completedCount: 5,
-        startDate: '2026/08/17',
-        endDate: '2026/08/24',
-        status: 'active',
-        courseType: 'video',
-        assignedBy: '張醫師',
-        assignedAt: '2026/08/17 09:30',
-      }
+        id: 'green-prescription-history-2026-08-03',
+        startDate: '2026/08/03',
+        endDate: '2026/08/09',
+        expertPrescriptions: [
+          { id: 'history-2026-08-03-diet-01', category: 'diet', title: '每日攝取至少3份蔬菜、2份水果', completed: true },
+          { id: 'history-2026-08-03-diet-02', category: 'diet', title: '減少高油、高鹽食物', completed: true },
+          { id: 'history-2026-08-03-diet-03', category: 'diet', title: '減少精緻澱粉及含糖飲料', completed: true },
+          { id: 'history-2026-08-03-activity-04', category: 'activity', title: '每週累積至少150分鐘中等強度活動', completed: true },
+          { id: 'history-2026-08-03-activity-05', category: 'activity', title: '每日安排伸展活動', completed: true },
+          { id: 'history-2026-08-03-activity-06', category: 'activity', title: '維持規律運動習慣', completed: true },
+          { id: 'history-2026-08-03-sleep-07', category: 'sleep', title: '建立規律作息及固定睡眠時間', completed: true },
+          { id: 'history-2026-08-03-sleep-08', category: 'sleep', title: '睡前減少使用3C產品', completed: true },
+          { id: 'history-2026-08-03-sleep-09', category: 'sleep', title: '維持適當睡眠時數', completed: false },
+          { id: 'history-2026-08-03-stress-10', category: 'stress', title: '每週安排個人放鬆時間', completed: false },
+          { id: 'history-2026-08-03-stress-11', category: 'stress', title: '練習適合自己的壓力調適方法', completed: false },
+          { id: 'history-2026-08-03-social-12', category: 'social', title: '維持與家人、朋友或他人的正向互動', completed: false },
+          { id: 'history-2026-08-03-social-13', category: 'social', title: '建立適合自己的社會支持網絡', completed: false },
+          { id: 'history-2026-08-03-substance-14', category: 'substance', title: '避免或減少菸草、酒精及檳榔', completed: false },
+          { id: 'history-2026-08-03-substance-15', category: 'substance', title: '減少環境毒素暴露', completed: false },
+        ].map((item) => ({
+          ...item,
+          taskId: item.id,
+          prescriptionId: 'historical-prescription-2026-08-03',
+          sourceQuestionnaireId: 'historical-questionnaire-2026-08-03',
+        })),
+        courses: [
+          { id: 'history-video-2026-08-03-1', title: '正確量血壓的方法', completed: true },
+          { id: 'history-video-2026-08-03-2', title: '認識高血壓飲食原則', completed: true },
+          { id: 'history-video-2026-08-03-3', title: '建立每日運動習慣', completed: false },
+        ].map((item) => ({
+          ...item,
+          taskId: item.id,
+          prescriptionId: 'historical-course-assignment-2026-08-03',
+          sourceQuestionnaireId: 'historical-questionnaire-2026-08-03',
+        })),
+      },
     ],
-    executionLogs: []
   }
 ];
 

@@ -1,4 +1,5 @@
 import { CaseItem } from '../types';
+import { calculateCurrentGreenPrescriptionSummary } from './currentGreenPrescriptionExecution';
 
 export interface GreenPrescriptionMetrics {
   assignedTaskCount: number;
@@ -7,29 +8,53 @@ export interface GreenPrescriptionMetrics {
   completionRate: number;
 }
 
+const validCount = (value: number) => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+export function normalizePrescriptionProgress(task: CaseItem['prescriptions'][number]) {
+  const targetCount = validCount(task.targetCount);
+  const completedCount = Math.min(validCount(task.completedCount), targetCount);
+  const status = targetCount > 0 && completedCount >= targetCount
+    ? 'completed' as const
+    : task.status === 'completed'
+      ? 'active' as const
+      : task.status;
+  return { ...task, targetCount, completedCount, status };
+}
+
+export function calculatePrescriptionTaskProgress(task: CaseItem['prescriptions'][number]) {
+  const normalized = normalizePrescriptionProgress(task);
+  return {
+    completedCount: normalized.completedCount,
+    targetCount: normalized.targetCount,
+    completionRate: normalized.targetCount > 0
+      ? Math.min(100, Math.floor((normalized.completedCount / normalized.targetCount) * 100))
+      : 0,
+  };
+}
+
 /** Single source of truth for case overview, execution overview and analysis. */
 export function calculateGreenPrescriptionMetrics(caseItem: CaseItem): GreenPrescriptionMetrics {
-  const active = caseItem.prescriptions.filter((task) => task.status === 'active' || task.status === 'completed');
-  const targetExecutionCount = active.reduce((sum, task) => sum + Math.max(0, task.targetCount), 0);
-  const completedExecutionCount = active.reduce((sum, task) => sum + Math.min(Math.max(0, task.completedCount), Math.max(0, task.targetCount)), 0);
-  const completionRate = targetExecutionCount > 0
-    ? Math.min(100, Math.floor((completedExecutionCount / targetExecutionCount) * 100))
-    : 0;
+  const prescriptions = caseItem.prescriptions.map(normalizePrescriptionProgress);
+  const summary = calculateCurrentGreenPrescriptionSummary({
+    tasks: prescriptions,
+  });
   return {
-    assignedTaskCount: active.length,
-    targetExecutionCount,
-    completedExecutionCount,
-    completionRate,
+    assignedTaskCount: summary.totalCount,
+    targetExecutionCount: summary.totalCount,
+    completedExecutionCount: summary.completedTotal,
+    completionRate: summary.overallRate,
   };
 }
 
 /** Keep the overview light and task data in sync after every prescription update. */
 export function synchronizePrescriptionStatus(caseItem: CaseItem): CaseItem {
-  const metrics = calculateGreenPrescriptionMetrics(caseItem);
+  const prescriptions = caseItem.prescriptions.map(normalizePrescriptionProgress);
+  const normalizedCase = { ...caseItem, prescriptions };
+  const metrics = calculateGreenPrescriptionMetrics(normalizedCase);
   const hasPrescription = metrics.assignedTaskCount > 0;
 
   return {
-    ...caseItem,
+    ...normalizedCase,
     prescriptionStatus: {
       ...caseItem.prescriptionStatus,
       hasPrescription,

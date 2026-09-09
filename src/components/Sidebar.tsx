@@ -30,7 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: '個案管理',
       items: [
         { id: 'cases', label: '我的個案', icon: Users, badge: undefined },
-        { id: 'messages', label: '訊息', icon: MessageSquare, badge: '3' },
+        { id: 'messages', label: '訊息', icon: MessageSquare, badge: undefined },
         { id: 'export', label: '資料匯出與分析', icon: FileSpreadsheet, badge: undefined },
       ],
     },
