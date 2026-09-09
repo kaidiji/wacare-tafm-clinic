@@ -1,0 +1,6 @@
+{
+  "name": "WaPro 醫師個案管理與綠色處方系統",
+  "description": "提供醫師檢視個案生理指標、活動量與健康數據，並可透過活動量旁之綠色處方燈號進入處方任務設定頁面，為個案指派九大類別健康任務、自訂處方內容與追蹤執行成果儀表板。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
