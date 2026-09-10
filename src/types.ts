@@ -94,6 +94,7 @@ export interface PrescriptionExecutionCycle {
   id: string;
   startDate: string;
   endDate: string;
+  assignedBy?: string;
   expertPrescriptions: HistoricalPrescriptionItem[];
   courses: HistoricalCourseItem[];
 }

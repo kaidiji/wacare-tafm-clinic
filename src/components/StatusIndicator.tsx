@@ -78,6 +78,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ level, classNa
 };
 
 interface GreenPrescriptionLightProps {
+  hasQuestionnaire: boolean;
   hasPrescription: boolean;
   activeCount: number;
   complianceRate: number;
@@ -86,25 +87,68 @@ interface GreenPrescriptionLightProps {
 }
 
 export const GreenPrescriptionLight: React.FC<GreenPrescriptionLightProps> = ({
+  hasQuestionnaire,
   hasPrescription,
   activeCount,
   complianceRate,
   status = 'good',
   onClick,
 }) => {
+  // 狀態一：尚未填寫生活型態問卷
+  if (!hasQuestionnaire) {
+    return (
+      <div
+        id="green-prescription-indicator-btn"
+        data-green-prescription-state="no-questionnaire"
+        onClick={onClick}
+        title="點擊進入數位綠色處方設定與任務指派頁面"
+        className="flex flex-col items-center justify-center cursor-pointer group"
+      >
+        <span className="text-[10px] text-zinc-400 font-medium mb-1 group-hover:text-[#f08327] transition-colors">
+          綠色處方
+        </span>
+        <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500 group-hover:bg-zinc-200 transition-colors">
+          未填問卷
+        </span>
+      </div>
+    );
+  }
+
+  // 狀態二：已填寫問卷，等待醫師指派任務
+  if (!hasPrescription) {
+    return (
+      <div
+        id="green-prescription-indicator-btn"
+        data-green-prescription-state="pending-assignment"
+        onClick={onClick}
+        title="點擊進入數位綠色處方設定與任務指派頁面"
+        className="flex flex-col items-center justify-center cursor-pointer group"
+      >
+        <span className="text-[10px] text-zinc-400 font-medium mb-1 group-hover:text-[#f08327] transition-colors">
+          綠色處方
+        </span>
+        <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-bold text-[#f08327] group-hover:bg-[#f08327] group-hover:text-white transition-colors">
+          待指派任務
+        </span>
+      </div>
+    );
+  }
+
+  // 狀態三：使用者正在執行處方（維持現況）
   return (
     <div
       id="green-prescription-indicator-btn"
+      data-green-prescription-state="in-progress"
       onClick={onClick}
       title="點擊進入數位綠色處方設定與任務指派頁面"
       className="flex flex-col items-center justify-center cursor-pointer group"
     >
-      <StatusIndicator level={hasPrescription ? status : 'none'} size={22} />
+      <StatusIndicator level={status} size={22} />
       <span className="text-[10px] text-zinc-400 font-medium mt-0.5 group-hover:text-[#f08327] transition-colors">
         綠色處方
       </span>
       <span className="text-xs font-bold text-zinc-800 group-hover:text-[#f08327] transition-colors">
-        {hasPrescription ? `${activeCount} 項任務 (${complianceRate}%)` : '待指派'}
+        {`${activeCount} 項任務 (${complianceRate}%)`}
       </span>
     </div>
   );

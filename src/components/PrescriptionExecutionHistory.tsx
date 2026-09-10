@@ -61,9 +61,14 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
                     <span>課程 {summary.courseCompleted} / {summary.courseTotal}</span>
                   </div>
                 </div>
-                {expanded
-                  ? <ChevronUp className="mt-0.5 h-5 w-5 shrink-0 text-zinc-400" />
-                  : <ChevronDown className="mt-0.5 h-5 w-5 shrink-0 text-zinc-400" />}
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  {cycle.assignedBy && (
+                    <span className="text-xs font-bold text-emerald-600">由{cycle.assignedBy}指派</span>
+                  )}
+                  {expanded
+                    ? <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
+                    : <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />}
+                </div>
               </button>
 
               {expanded && (

@@ -65,6 +65,7 @@ export const INITIAL_CASES: CaseItem[] = [
         id: 'green-prescription-history-2026-08-03',
         startDate: '2026/08/03',
         endDate: '2026/08/09',
+        assignedBy: '示範診所',
         expertPrescriptions: [
           { id: 'history-2026-08-03-diet-01', category: 'diet', title: '每日攝取至少3份蔬菜、2份水果', completed: true },
           { id: 'history-2026-08-03-diet-02', category: 'diet', title: '減少高油、高鹽食物', completed: true },

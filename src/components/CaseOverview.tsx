@@ -17,6 +17,7 @@ import {
 import { CaseItem } from '../types';
 import { StatusIndicator, GreenPrescriptionLight } from './StatusIndicator';
 import { calculateGreenPrescriptionMetrics } from '../utils/greenPrescriptionMetrics';
+import { getQuestionnaireHistory } from '../utils/greenPrescriptionDomain';
 
 interface CaseOverviewProps {
   cases: CaseItem[];
@@ -80,10 +81,10 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
 
       const prescriptionMetrics = calculateGreenPrescriptionMetrics(c);
       if (selectedFilter === '有處方') {
-        return prescriptionMetrics.assignedTaskCount > 0;
+        return prescriptionMetrics.assignedPrescriptionCount > 0;
       }
       if (selectedFilter === '待指派處方') {
-        return prescriptionMetrics.assignedTaskCount === 0;
+        return prescriptionMetrics.assignedPrescriptionCount === 0;
       }
       if (selectedFilter === '需關注') {
         return c.bloodPressure.status === 'concern' || c.activity.status === 'concern';
@@ -518,7 +519,8 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
                     {visibleColumns.includes('綠色處方') && (
                       <td className="py-2 px-2 text-center align-middle hover:bg-[#ffe5d0]/50 transition-colors">
                         <GreenPrescriptionLight
-                          hasPrescription={prescriptionMetrics.assignedTaskCount > 0}
+                          hasQuestionnaire={getQuestionnaireHistory(caseItem).length > 0}
+                          hasPrescription={prescriptionMetrics.assignedPrescriptionCount > 0}
                           activeCount={prescriptionMetrics.assignedTaskCount}
                           complianceRate={prescriptionMetrics.completionRate}
                           status={caseItem.prescriptionStatus.status}

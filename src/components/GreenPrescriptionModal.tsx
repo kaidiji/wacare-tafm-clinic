@@ -11,10 +11,15 @@ import { formatExercisePrescription, PrescriptionSelection } from '../utils/gree
 export type SelectedPrescription = PrescriptionSelection;
 
 type ExerciseField = keyof ExercisePrescriptionDetails;
-type ExerciseDraft = ExercisePrescriptionDetails & { customExerciseType: string };
+interface ExerciseDraft {
+  exerciseTypes: string[];
+  frequency: string;
+  duration: string;
+  customExerciseType: string;
+}
 
 const EMPTY_EXERCISE_DRAFT: ExerciseDraft = {
-  exerciseType: '',
+  exerciseTypes: [],
   frequency: '',
   duration: '',
   customExerciseType: '',
@@ -39,7 +44,10 @@ const basicDefinitionId = (group: GreenPrescriptionGroup, index: number) =>
   `${group.surveyFocus}-basic-${index + 1}`;
 const advancedDefinitionId = (group: GreenPrescriptionGroup, sectionIndex: number, optionIndex: number) =>
   `${group.surveyFocus}-advanced-${sectionIndex + 1}-${optionIndex + 1}`;
-const exerciseDefinitionId = (group: GreenPrescriptionGroup) => `${group.surveyFocus}-exercise-plan`;
+const exerciseTypeDefinitionId = (group: GreenPrescriptionGroup, optionIndex: number) =>
+  `${group.surveyFocus}-exercise-plan-${optionIndex + 1}`;
+const findExerciseTypeSection = (group: GreenPrescriptionGroup) =>
+  group.advanced.find((section) => exerciseFieldBySection[section.title] === 'exerciseType');
 
 interface GreenPrescriptionModalProps {
   isOpen: boolean;
@@ -66,6 +74,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
   const [selectedAdvanced, setSelectedAdvanced] = useState<Set<string>>(new Set());
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, ExerciseDraft>>({});
+  const [excludedBasicIds, setExcludedBasicIds] = useState<Set<string>>(new Set());
 
   const optionKey = (group: GreenPrescriptionGroup, section: AdvancedPrescriptionSection, option: string) =>
     `${group.focus}|${section.title}|${option}`;
@@ -76,22 +85,37 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     const restoredSelections = new Set<string>();
     const restoredOtherText: Record<string, string> = {};
     const restoredExerciseDrafts: Record<string, ExerciseDraft> = {};
+    const restoredExcludedBasic = new Set<string>();
+    const hasAnyAssignment = existingPrescriptions.length > 0;
     matchedGroups.forEach((group) => {
       const existingForGroup = existingPrescriptions.filter(
         (task) => task.prescriptionLevel === '加強處方' && task.prescriptionFocus === group.focus,
       );
+
+      group.basic.forEach((_, index) => {
+        if (!hasAnyAssignment) return;
+        const definitionId = basicDefinitionId(group, index);
+        const stillExists = existingPrescriptions.some((task) => task.definitionId === definitionId);
+        if (!stillExists) restoredExcludedBasic.add(definitionId);
+      });
+
       if (group.focus === '身體活動') {
-        const draft = { ...EMPTY_EXERCISE_DRAFT };
-        const structured = existingForGroup.find(
-          (task) => task.definitionId === exerciseDefinitionId(group) || !!task.exercisePrescription,
-        )?.exercisePrescription;
-        if (structured) {
-          const exerciseTypeOptions = group.advanced.find((section) => exerciseFieldBySection[section.title] === 'exerciseType')?.options ?? [];
-          const knownExerciseType = exerciseTypeOptions.includes(structured.exerciseType);
-          draft.exerciseType = knownExerciseType ? structured.exerciseType : '其他';
-          draft.customExerciseType = knownExerciseType ? '' : structured.exerciseType;
-          draft.frequency = normalizeLegacyExerciseValue('frequency', structured.frequency);
-          draft.duration = normalizeLegacyExerciseValue('duration', structured.duration);
+        const draft: ExerciseDraft = { ...EMPTY_EXERCISE_DRAFT, exerciseTypes: [] };
+        const exerciseTypeSection = findExerciseTypeSection(group);
+        const exerciseTasksForGroup = existingForGroup.filter((task) => !!task.exercisePrescription);
+        if (exerciseTypeSection) {
+          exerciseTypeSection.options.forEach((option, optionIndex) => {
+            const definitionId = exerciseTypeDefinitionId(group, optionIndex);
+            const task = exerciseTasksForGroup.find((item) => item.definitionId === definitionId);
+            if (!task || !task.exercisePrescription) return;
+            draft.exerciseTypes.push(option);
+            if (option === '其他') draft.customExerciseType = task.exercisePrescription.exerciseType;
+          });
+        }
+        const sample = exerciseTasksForGroup[0]?.exercisePrescription;
+        if (sample) {
+          draft.frequency = normalizeLegacyExerciseValue('frequency', sample.frequency);
+          draft.duration = normalizeLegacyExerciseValue('duration', sample.duration);
         }
         restoredExerciseDrafts[group.focus] = draft;
         return;
@@ -111,6 +135,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     setSelectedAdvanced(restoredSelections);
     setOtherText(restoredOtherText);
     setExerciseDrafts(restoredExerciseDrafts);
+    setExcludedBasicIds(restoredExcludedBasic);
   }, [existingPrescriptions, isOpen, matchedGroups]);
 
   if (!isOpen) return null;
@@ -123,15 +148,41 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     });
   };
 
-  const updateExerciseDraft = (focus: string, field: keyof ExerciseDraft, value: string) => {
+  const toggleBasic = (definitionId: string) => {
+    setExcludedBasicIds((current) => {
+      const next = new Set(current);
+      next.has(definitionId) ? next.delete(definitionId) : next.add(definitionId);
+      return next;
+    });
+  };
+
+  const setExerciseDraft = (focus: string, updater: (draft: ExerciseDraft) => ExerciseDraft) => {
     setExerciseDrafts((current) => ({
       ...current,
-      [focus]: {
-        ...(current[focus] ?? EMPTY_EXERCISE_DRAFT),
-        [field]: value,
-        ...(field === 'exerciseType' && value !== '其他' ? { customExerciseType: '' } : {}),
-      },
+      [focus]: updater(current[focus] ?? EMPTY_EXERCISE_DRAFT),
     }));
+  };
+
+  const toggleExerciseType = (focus: string, option: string) => {
+    setExerciseDraft(focus, (draft) => {
+      const isSelected = draft.exerciseTypes.includes(option);
+      const exerciseTypes = isSelected
+        ? draft.exerciseTypes.filter((item) => item !== option)
+        : [...draft.exerciseTypes, option];
+      return {
+        ...draft,
+        exerciseTypes,
+        customExerciseType: option === '其他' && isSelected ? '' : draft.customExerciseType,
+      };
+    });
+  };
+
+  const updateExerciseSingleField = (focus: string, field: 'frequency' | 'duration', value: string) => {
+    setExerciseDraft(focus, (draft) => ({ ...draft, [field]: value }));
+  };
+
+  const updateExerciseCustomType = (focus: string, value: string) => {
+    setExerciseDraft(focus, (draft) => ({ ...draft, customExerciseType: value }));
   };
 
   const needsCustomText = (option: string) => option === '其他' || option === '其它';
@@ -147,60 +198,75 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
   const hasIncompleteExercise = matchedGroups.some((group) => {
     if (group.focus !== '身體活動') return false;
     const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
-    const hasStarted = Boolean(draft.exerciseType || draft.frequency || draft.duration || draft.customExerciseType.trim());
+    const hasStarted = draft.exerciseTypes.length > 0 || Boolean(draft.frequency || draft.duration || draft.customExerciseType.trim());
     if (!hasStarted) return false;
-    return !draft.exerciseType || !draft.frequency || !draft.duration || (draft.exerciseType === '其他' && !draft.customExerciseType.trim());
+    return draft.exerciseTypes.length === 0 || !draft.frequency || !draft.duration
+      || (draft.exerciseTypes.includes('其他') && !draft.customExerciseType.trim());
   });
-  const completedExerciseSelectionCount = matchedGroups.filter((group) => {
-    if (group.focus !== '身體活動') return false;
+  const completedExerciseSelectionCount = matchedGroups.reduce((sum, group) => {
+    if (group.focus !== '身體活動') return sum;
     const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
-    return Boolean(draft.exerciseType && draft.frequency && draft.duration && (draft.exerciseType !== '其他' || draft.customExerciseType.trim()));
-  }).length;
+    const isComplete = draft.exerciseTypes.length > 0 && Boolean(draft.frequency) && Boolean(draft.duration)
+      && (!draft.exerciseTypes.includes('其他') || draft.customExerciseType.trim());
+    return sum + (isComplete ? draft.exerciseTypes.length : 0);
+  }, 0);
   const hasIncompleteSelection = hasIncompleteOther || hasIncompleteExercise;
+  const totalBasicCount = matchedGroups.reduce((sum, group) => sum + group.basic.length, 0);
+  const includedBasicCount = matchedGroups.reduce(
+    (sum, group) => sum + group.basic.filter((_, index) => !excludedBasicIds.has(basicDefinitionId(group, index))).length,
+    0,
+  );
 
   const submit = () => {
     if (!matchedGroups.length || hasIncompleteSelection) return;
 
     const basicItems: SelectedPrescription[] = matchedGroups.flatMap((group) =>
-      group.basic.map((text, index) => {
-        const definitionId = basicDefinitionId(group, index);
-        const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
-        return {
-          definitionId,
-          taskId: existing?.taskId ?? existing?.id,
-          prescriptionId: existing?.prescriptionId,
-          focus: group.focus,
-          text,
-          level: '基本處方',
-          category: group.category,
-        };
-      }),
+      group.basic
+        .map((text, index) => ({ text, definitionId: basicDefinitionId(group, index) }))
+        .filter(({ definitionId }) => !excludedBasicIds.has(definitionId))
+        .map(({ text, definitionId }) => {
+          const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
+          return {
+            definitionId,
+            taskId: existing?.taskId ?? existing?.id,
+            prescriptionId: existing?.prescriptionId,
+            focus: group.focus,
+            text,
+            level: '基本處方',
+            category: group.category,
+          };
+        }),
     );
     const advancedItems: SelectedPrescription[] = matchedGroups.flatMap((group) =>
       group.focus === '身體活動'
         ? (() => {
             const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
-            if (!draft.exerciseType && !draft.frequency && !draft.duration) return [];
-            if (!draft.exerciseType || !draft.frequency || !draft.duration) return [];
-            const exercisePrescription: ExercisePrescriptionDetails = {
-              exerciseType: draft.exerciseType === '其他' ? draft.customExerciseType.trim() : draft.exerciseType,
-              frequency: draft.frequency,
-              duration: draft.duration,
-            };
-            const definitionId = exerciseDefinitionId(group);
-            const existing = existingPrescriptions.find(
-              (task) => task.definitionId === definitionId || !!task.exercisePrescription,
-            );
-            return [{
-              definitionId,
-              taskId: existing?.taskId ?? existing?.id,
-              prescriptionId: existing?.prescriptionId,
-              focus: group.focus,
-              text: formatExercisePrescription(exercisePrescription),
-              level: '加強處方' as const,
-              category: group.category,
-              exercisePrescription,
-            }];
+            if (!draft.exerciseTypes.length || !draft.frequency || !draft.duration) return [];
+            const exerciseTypeSection = findExerciseTypeSection(group);
+            if (!exerciseTypeSection) return [];
+            return draft.exerciseTypes.flatMap((typeValue) => {
+              const optionIndex = exerciseTypeSection.options.indexOf(typeValue);
+              if (optionIndex === -1) return [];
+              const resolvedType = typeValue === '其他' ? draft.customExerciseType.trim() : typeValue;
+              if (!resolvedType) return [];
+              const exercisePrescription: ExercisePrescriptionDetails = {
+                exerciseType: resolvedType,
+                frequency: draft.frequency,
+                duration: draft.duration,
+              };
+              const definitionId = exerciseTypeDefinitionId(group, optionIndex);
+              const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
+              return [{
+                definitionId,
+                taskId: existing?.taskId ?? existing?.id,
+                prescriptionId: existing?.prescriptionId,
+                focus: group.focus,
+                text: formatExercisePrescription(exercisePrescription),
+                level: '加強處方' as const,
+                category: group.category,
+                exercisePrescription,
+              }];
+            });
           })()
         : group.advanced.flatMap((section, sectionIndex) =>
         section.options.flatMap((option, optionIndex) => {
@@ -248,7 +314,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
         <main className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-zinc-50 p-5">
           <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs leading-5 text-emerald-900">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>系統已依問卷關注面向自動產出基本處方；基本處方固定納入，醫師可視個案需求勾選加強處方。</span>
+            <span>系統已依問卷關注面向自動產出基本處方；基本處方預設納入，醫師可視個案需求取消基本處方或勾選加強處方。</span>
           </div>
 
           {!matchedGroups.length ? (
@@ -267,16 +333,32 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
 
               <div className="grid gap-5 p-4 lg:grid-cols-2">
                 <div>
-                  <h4 className="mb-2 text-sm font-bold text-zinc-700">系統自動產出的基本處方</h4>
+                  <h4 className="mb-2 text-sm font-bold text-zinc-700">基本處方</h4>
                   <div className="space-y-2">
-                    {group.basic.map((text) => (
-                      <div key={text} className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs leading-5 text-zinc-800">
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-emerald-600 bg-emerald-600 text-white">
-                          <Check className="h-3.5 w-3.5" />
-                        </span>
-                        <span>{text}</span>
-                      </div>
-                    ))}
+                    {group.basic.map((text, index) => {
+                      const definitionId = basicDefinitionId(group, index);
+                      const excluded = excludedBasicIds.has(definitionId);
+                      return (
+                        <button
+                          key={text}
+                          type="button"
+                          onClick={() => toggleBasic(definitionId)}
+                          title={excluded ? '點擊恢復此基本處方' : '點擊取消此基本處方'}
+                          className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${
+                            excluded ? 'border-zinc-200 bg-white text-zinc-700 hover:border-orange-300' : 'border-emerald-300 bg-emerald-50 text-zinc-800 hover:border-emerald-400'
+                          }`}
+                        >
+                          <span
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                              excluded ? 'border-zinc-300' : 'border-emerald-600 bg-emerald-600 text-white'
+                            }`}
+                          >
+                            {!excluded && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <span>{text}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -285,38 +367,71 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
                     const field = exerciseFieldBySection[section.title];
                     if (!field) return null;
                     const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
-                    const hasStarted = Boolean(draft.exerciseType || draft.frequency || draft.duration || draft.customExerciseType.trim());
-                    const fieldIsIncomplete = hasStarted && (!draft[field] || (field === 'exerciseType' && draft[field] === '其他' && !draft.customExerciseType.trim()));
+                    const hasStarted = draft.exerciseTypes.length > 0 || Boolean(draft.frequency || draft.duration || draft.customExerciseType.trim());
+
+                    if (field === 'exerciseType') {
+                      const fieldIsIncomplete = hasStarted
+                        && (draft.exerciseTypes.length === 0 || (draft.exerciseTypes.includes('其他') && !draft.customExerciseType.trim()));
+                      return (
+                        <fieldset key={section.title}>
+                          <legend className="mb-2 text-sm font-bold text-zinc-700">
+                            {section.title}
+                            <span className="ml-1 text-[11px] font-normal text-zinc-400">（可複選）</span>
+                          </legend>
+                          <div className="space-y-2">
+                            {section.options.map((option) => {
+                              const checked = draft.exerciseTypes.includes(option);
+                              return (
+                                <div key={option}>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleExerciseType(group.focus, option)}
+                                    className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${checked ? 'border-[#f08327] bg-orange-50' : 'border-zinc-200 bg-white hover:border-orange-300'}`}
+                                  >
+                                    <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${checked ? 'border-[#f08327] bg-[#f08327] text-white' : 'border-zinc-300'}`}>
+                                      {checked && <Check className="h-3.5 w-3.5" />}
+                                    </span>
+                                    <span>{option}</span>
+                                  </button>
+                                  {option === '其他' && checked && (
+                                    <input
+                                      type="text"
+                                      value={draft.customExerciseType}
+                                      onChange={(event) => updateExerciseCustomType(group.focus, event.target.value)}
+                                      placeholder="請輸入推薦運動"
+                                      className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-xs focus:border-[#f08327] focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                      autoFocus
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {fieldIsIncomplete && <p className="mt-2 text-xs font-medium text-red-600">請至少選擇一項{section.title}。</p>}
+                        </fieldset>
+                      );
+                    }
+
+                    const singleField = field as 'frequency' | 'duration';
+                    const fieldIsIncomplete = hasStarted && !draft[singleField];
                     return (
                       <fieldset key={section.title}>
                         <legend className="mb-2 text-sm font-bold text-zinc-700">{section.title}</legend>
                         <div className="space-y-2">
                           {section.options.map((option) => {
-                            const checked = draft[field] === option;
+                            const checked = draft[singleField] === option;
                             return (
-                              <div key={option}>
-                                <label className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${checked ? 'border-[#f08327] bg-orange-50' : 'border-zinc-200 bg-white hover:border-orange-300'}`}>
-                                  <input
-                                    type="radio"
-                                    name={`exercise-${group.focus}-${field}`}
-                                    value={option}
-                                    checked={checked}
-                                    onChange={() => updateExerciseDraft(group.focus, field, option)}
-                                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#f08327]"
-                                  />
-                                  <span>{option}</span>
-                                </label>
-                                {field === 'exerciseType' && option === '其他' && checked && (
-                                  <input
-                                    type="text"
-                                    value={draft.customExerciseType}
-                                    onChange={(event) => updateExerciseDraft(group.focus, 'customExerciseType', event.target.value)}
-                                    placeholder="請輸入推薦運動"
-                                    className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-xs focus:border-[#f08327] focus:outline-none focus:ring-2 focus:ring-orange-100"
-                                    autoFocus
-                                  />
-                                )}
-                              </div>
+                              <label key={option} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${checked ? 'border-[#f08327] bg-orange-50' : 'border-zinc-200 bg-white hover:border-orange-300'}`}>
+                                <input
+                                  type="radio"
+                                  name={`exercise-${group.focus}-${singleField}`}
+                                  value={option}
+                                  checked={checked}
+                                  onChange={() => updateExerciseSingleField(group.focus, singleField, option)}
+                                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#f08327]"
+                                />
+                                <span>{option}</span>
+                              </label>
                             );
                           })}
                         </div>
@@ -366,7 +481,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
 
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-6 py-4">
           <span className="text-sm text-zinc-500">
-            基本處方 {matchedGroups.reduce((sum, group) => sum + group.basic.length, 0)} 項・加強處方已選 {selectedAdvanced.size + completedExerciseSelectionCount} 項
+            基本處方 {includedBasicCount}/{totalBasicCount} 項・加強處方已選 {selectedAdvanced.size + completedExerciseSelectionCount} 項
           </span>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-zinc-300 px-5 py-2 text-sm font-bold text-zinc-600">取消</button>

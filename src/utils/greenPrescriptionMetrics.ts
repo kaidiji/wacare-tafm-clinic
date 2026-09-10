@@ -3,6 +3,8 @@ import { calculateCurrentGreenPrescriptionSummary } from './currentGreenPrescrip
 
 export interface GreenPrescriptionMetrics {
   assignedTaskCount: number;
+  /** Doctor-assigned prescription tasks only — excludes the system-default weekly course videos. */
+  assignedPrescriptionCount: number;
   targetExecutionCount: number;
   completedExecutionCount: number;
   completionRate: number;
@@ -40,6 +42,7 @@ export function calculateGreenPrescriptionMetrics(caseItem: CaseItem): GreenPres
   });
   return {
     assignedTaskCount: summary.totalCount,
+    assignedPrescriptionCount: prescriptions.filter((task) => task.executionKind !== 'course').length,
     targetExecutionCount: summary.totalCount,
     completedExecutionCount: summary.completedTotal,
     completionRate: summary.overallRate,
@@ -51,7 +54,7 @@ export function synchronizePrescriptionStatus(caseItem: CaseItem): CaseItem {
   const prescriptions = caseItem.prescriptions.map(normalizePrescriptionProgress);
   const normalizedCase = { ...caseItem, prescriptions };
   const metrics = calculateGreenPrescriptionMetrics(normalizedCase);
-  const hasPrescription = metrics.assignedTaskCount > 0;
+  const hasPrescription = metrics.assignedPrescriptionCount > 0;
 
   return {
     ...normalizedCase,

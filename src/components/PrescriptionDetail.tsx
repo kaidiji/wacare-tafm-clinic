@@ -6,7 +6,6 @@ import {
   ClipboardList,
   FileText,
   Leaf,
-  Pencil,
   Plus,
 } from 'lucide-react';
 import { CaseItem, QuestionnaireRecord } from '../types';
@@ -140,15 +139,25 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
                     ))}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  data-questionnaire-action-id={questionnaire.id}
-                  onClick={() => setSelectedQuestionnaire(questionnaire)}
-                  className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#f08327] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#d96e19] sm:w-auto"
-                >
-                  {hasAssignment ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                  {hasAssignment ? '編輯指派處方' : '指派處方'}
-                </button>
+                {hasAssignment ? (
+                  <span
+                    data-questionnaire-action-id={questionnaire.id}
+                    className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 sm:w-auto"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    已指派
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    data-questionnaire-action-id={questionnaire.id}
+                    onClick={() => setSelectedQuestionnaire(questionnaire)}
+                    className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#f08327] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#d96e19] sm:w-auto"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    指派處方
+                  </button>
+                )}
               </div>
               );
             })}
