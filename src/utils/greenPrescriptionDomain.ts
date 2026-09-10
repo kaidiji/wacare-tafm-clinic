@@ -1,4 +1,12 @@
-import { CaseItem, ExercisePrescriptionDetails, PrescriptionTask, QuestionnaireRecord } from '../types';
+import {
+  CaseItem,
+  ExercisePrescriptionDetails,
+  HistoricalCourseItem,
+  HistoricalPrescriptionItem,
+  PrescriptionExecutionCycle,
+  PrescriptionTask,
+  QuestionnaireRecord,
+} from '../types';
 import { synchronizePrescriptionStatus } from './greenPrescriptionMetrics';
 
 export interface PrescriptionSelection {
@@ -141,6 +149,94 @@ export function reconcileQuestionnairePrescriptions({
   return [...questionnaireTasks, ...unaffectedTasks];
 }
 
+const isTaskCompleted = (task: PrescriptionTask): boolean => {
+  const targetCount = Math.max(0, Math.floor(task.targetCount));
+  const completedCount = Math.min(Math.max(0, Math.floor(task.completedCount)), targetCount);
+  return targetCount > 0 && completedCount >= targetCount;
+};
+
+/**
+ * 結算當前執行週期：把 caseItem.prescriptions（含處方與課程）彙整成一筆歷史紀錄，
+ * 並清空當前任務，讓後續指派從全新的週期開始。
+ * 放棄逐筆即時記錄，改以「結算當下」為準的週期性紀錄。
+ */
+export function settleExecutionCycle({ caseItem, now }: { caseItem: CaseItem; now: Date }): CaseItem {
+  const tasks = caseItem.prescriptions;
+  if (tasks.length === 0) return caseItem;
+
+  const expertPrescriptions: HistoricalPrescriptionItem[] = tasks
+    .filter((task) => task.executionKind !== 'course')
+    .map((task) => ({
+      id: task.id,
+      taskId: task.taskId ?? task.id,
+      prescriptionId: task.prescriptionId,
+      sourceQuestionnaireId: task.sourceQuestionnaireId,
+      category: task.prescriptionFocus ?? task.category,
+      title: task.title,
+      completed: isTaskCompleted(task),
+    }));
+
+  const courses: HistoricalCourseItem[] = tasks
+    .filter((task) => task.executionKind === 'course')
+    .map((task) => ({
+      id: task.id,
+      taskId: task.taskId ?? task.id,
+      prescriptionId: task.prescriptionId,
+      sourceQuestionnaireId: task.sourceQuestionnaireId,
+      title: task.title,
+      completed: isTaskCompleted(task),
+    }));
+
+  const earliestStart = tasks.reduce(
+    (earliest, task) => Math.min(earliest, parseQuestionnaireDate(task.startDate)),
+    Number.POSITIVE_INFINITY,
+  );
+  const cycleStartDate = Number.isFinite(earliestStart) ? new Date(earliestStart) : now;
+  // 結算週期的指派人取自當前處方任務本身（而非即將指派的新處方），純課程週期則不歸屬任何人。
+  const assignedByTask = tasks.find((task) => task.executionKind !== 'course' && task.assignedBy);
+
+  const cycle: PrescriptionExecutionCycle = {
+    id: `execution-cycle-${caseItem.id}-${now.getTime()}`,
+    startDate: formatLocalPrescriptionDate(cycleStartDate),
+    endDate: formatLocalPrescriptionDate(now),
+    assignedBy: assignedByTask?.assignedBy,
+    expertPrescriptions,
+    courses,
+  };
+
+  return {
+    ...caseItem,
+    executionHistory: [...(caseItem.executionHistory ?? []), cycle],
+    prescriptions: [],
+  };
+}
+
+const WEEKLY_COURSE_SETTLEMENT_DAYS = 7;
+
+/**
+ * 純影片觀看（尚未經醫師指派處方）的週期每 7 天自動結算一次；
+ * 一旦有醫師指派的處方，則改由指派當下立即結算（見 settleExecutionCycle 的呼叫端）。
+ */
+export function settleDueCourseOnlyExecutionCycle(caseItem: CaseItem, now: Date): CaseItem {
+  const tasks = caseItem.prescriptions;
+  if (tasks.length === 0) return caseItem;
+
+  const hasDoctorPrescription = tasks.some((task) => task.executionKind !== 'course');
+  if (hasDoctorPrescription) return caseItem;
+
+  const earliestStart = tasks.reduce(
+    (earliest, task) => Math.min(earliest, parseQuestionnaireDate(task.startDate)),
+    Number.POSITIVE_INFINITY,
+  );
+  if (!Number.isFinite(earliestStart)) return caseItem;
+
+  const dueAt = earliestStart + WEEKLY_COURSE_SETTLEMENT_DAYS * 24 * 60 * 60 * 1000;
+  if (now.getTime() < dueAt) return caseItem;
+
+  const settled = settleExecutionCycle({ caseItem, now });
+  return { ...settled, prescriptions: ensureDefaultCourseTasks(settled, now) };
+}
+
 const DEFAULT_COURSE_VIDEO_TITLES = ['本週課程影片 1', '本週課程影片 2', '本週課程影片 3'];
 
 function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
@@ -188,9 +284,10 @@ export function migrateCaseItem(caseItem: CaseItem, now: Date = new Date()): Cas
     executionHistory: Array.isArray(caseItem.executionHistory) ? caseItem.executionHistory : [],
   };
   const withDefaultCourses = { ...safeCase, prescriptions: ensureDefaultCourseTasks(safeCase, now) };
+  const withWeeklySettlement = settleDueCourseOnlyExecutionCycle(withDefaultCourses, now);
   return {
-    ...withDefaultCourses,
-    questionnaireHistory: getQuestionnaireHistory(withDefaultCourses),
+    ...withWeeklySettlement,
+    questionnaireHistory: getQuestionnaireHistory(withWeeklySettlement),
   };
 }
 

@@ -9,11 +9,14 @@ import {
 import { getPrescriptionGroupsForInterests, normalizeSurveyFocus } from '../src/utils/greenPrescriptionCatalog';
 import {
   createPrototypeCases,
+  ensureDefaultCourseTasks,
   formatExercisePrescription,
   getQuestionnaireHistory,
   hasQuestionnaireAssignment,
   migrateCaseItem,
   reconcileQuestionnairePrescriptions,
+  settleDueCourseOnlyExecutionCycle,
+  settleExecutionCycle,
 } from '../src/utils/greenPrescriptionDomain';
 import { QuestionnaireRecord } from '../src/types';
 import {
@@ -358,5 +361,82 @@ assert.deepEqual(calculatePrescriptionTaskProgress({ ...firstAssignment[0], targ
   targetCount: 7,
   completionRate: 71,
 });
+
+// ---- 週期結算機制 ----
+
+// 空任務結算為 no-op（回傳原物件參照）
+const noopSettled = settleExecutionCycle({ caseItem: emptyCase, now: new Date(2026, 8, 9, 10, 0) });
+assert.equal(noopSettled, emptyCase);
+
+// 純課程週期結算：彙整成一筆歷史紀錄，且不歸屬任何指派人
+const courseOnlyCase = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, new Date(2026, 8, 9, 8, 0));
+const courseOnlyProgressed = {
+  ...courseOnlyCase,
+  prescriptions: courseOnlyCase.prescriptions.map((task, index) => (index === 0 ? { ...task, completedCount: 1 } : task)),
+};
+const settledCourseOnly = settleExecutionCycle({ caseItem: courseOnlyProgressed, now: new Date(2026, 8, 16, 9, 0) });
+assert.equal(settledCourseOnly.prescriptions.length, 0);
+assert.equal(settledCourseOnly.executionHistory?.length, (courseOnlyProgressed.executionHistory?.length ?? 0) + 1);
+const settledCourseCycle = settledCourseOnly.executionHistory![settledCourseOnly.executionHistory!.length - 1];
+assert.equal(settledCourseCycle.expertPrescriptions.length, 0);
+assert.equal(settledCourseCycle.courses.length, 3);
+assert.equal(settledCourseCycle.courses.filter((course) => course.completed).length, 1);
+assert.equal(settledCourseCycle.assignedBy, undefined);
+assert.equal(settledCourseCycle.startDate, '2026/09/09');
+assert.equal(settledCourseCycle.endDate, '2026/09/16');
+
+// 有醫師處方的週期結算：歷史紀錄歸屬該指派醫師
+const mixedCase = {
+  ...emptyCase,
+  prescriptions: [
+    ...firstAssignment.map((task, index) => (index === 0 ? { ...task, completedCount: 1, status: 'completed' as const } : task)),
+    ...courseOnlyCase.prescriptions,
+  ],
+};
+const settledMixed = settleExecutionCycle({ caseItem: mixedCase, now: new Date(2026, 8, 20, 9, 0) });
+const settledMixedCycle = settledMixed.executionHistory![settledMixed.executionHistory!.length - 1];
+assert.equal(settledMixedCycle.expertPrescriptions.length, firstAssignment.length);
+assert.equal(settledMixedCycle.expertPrescriptions.filter((item) => item.completed).length, 1);
+assert.equal(settledMixedCycle.courses.length, 3);
+assert.equal(settledMixedCycle.assignedBy, '測試醫師');
+assert.equal(settledMixed.prescriptions.length, 0);
+
+// 週結算規則（7 天一個週期）：未滿 7 天不結算；滿 7 天且僅有課程才自動結算；一旦有醫師處方則不適用週結
+const weeklyBaseline = new Date(2026, 8, 9, 8, 0);
+const courseOnlyForWeekly = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, weeklyBaseline);
+const notDueYet = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 15, 8, 0));
+assert.equal(notDueYet, courseOnlyForWeekly);
+const dueSettlement = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
+assert.equal(dueSettlement.executionHistory?.length, 1);
+assert.equal(dueSettlement.prescriptions.length, 3);
+assert.equal(dueSettlement.prescriptions.every((task) => task.executionKind === 'course' && task.completedCount === 0), true);
+assert.equal(dueSettlement.prescriptions[0].startDate, '2026/09/16');
+
+const mixedForWeekly = { ...courseOnlyForWeekly, prescriptions: [...courseOnlyForWeekly.prescriptions, firstAssignment[0]] };
+const notSettledDueToPrescription = settleDueCourseOnlyExecutionCycle(mixedForWeekly, new Date(2026, 8, 20, 8, 0));
+assert.equal(notSettledDueToPrescription, mixedForWeekly);
+
+// migrateCaseItem 載入個案時會自動套用週結算
+const migratedAfterAWeek = migrateCaseItem(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
+assert.equal(migratedAfterAWeek.executionHistory?.length, 1);
+assert.equal(migratedAfterAWeek.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+
+// 模擬醫師依新問卷指派處方的完整流程：立即結算舊週期 -> 套用新處方 -> 補齊新週期課程
+const beforeAssignmentCase = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, new Date(2026, 8, 9, 8, 0));
+const assignmentNow = new Date(2026, 8, 9, 10, 0);
+const settledBeforeAssignment = settleExecutionCycle({ caseItem: beforeAssignmentCase, now: assignmentNow });
+const newlyAssigned = reconcileQuestionnairePrescriptions({
+  caseItem: settledBeforeAssignment,
+  questionnaire,
+  selections,
+  assignedBy: '測試醫師',
+  now: assignmentNow,
+});
+const afterAssignmentPrescriptions = ensureDefaultCourseTasks({ ...settledBeforeAssignment, prescriptions: newlyAssigned }, assignmentNow);
+assert.equal(settledBeforeAssignment.executionHistory?.length, 1);
+assert.equal(settledBeforeAssignment.executionHistory![0].courses.length, 3);
+assert.equal(settledBeforeAssignment.executionHistory![0].assignedBy, undefined);
+assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind === 'course').length, 3);
+assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind !== 'course').length, selections.length);
 
 console.log('green prescription validation: PASS');

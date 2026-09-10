@@ -16,10 +16,12 @@ import { PrescriptionExecutionHistory } from './PrescriptionExecutionHistory';
 import { CurrentPrescriptionExecution } from './CurrentPrescriptionExecution';
 import { synchronizePrescriptionStatus } from '../utils/greenPrescriptionMetrics';
 import {
+  ensureDefaultCourseTasks,
   formatLocalPrescriptionDate,
   getQuestionnaireHistory,
   hasQuestionnaireAssignment,
   reconcileQuestionnairePrescriptions,
+  settleExecutionCycle,
 } from '../utils/greenPrescriptionDomain';
 
 interface PrescriptionDetailProps {
@@ -45,17 +47,21 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
     if (!selectedQuestionnaire) return;
 
     const now = new Date();
+    // 派發新處方時立即結算當前週期（含此前純課程觀看紀錄），並從全新週期開始。
+    const settledCase = settleExecutionCycle({ caseItem, now });
     const prescriptions = reconcileQuestionnairePrescriptions({
-      caseItem,
+      caseItem: settledCase,
       questionnaire: selectedQuestionnaire,
       selections: items,
       assignedBy: '王志銘醫師',
       now,
     });
+    const caseWithNewPrescriptions = { ...settledCase, prescriptions };
+    const finalPrescriptions = ensureDefaultCourseTasks(caseWithNewPrescriptions, now);
 
     onUpdateCase(synchronizePrescriptionStatus({
-      ...caseItem,
-      prescriptions,
+      ...caseWithNewPrescriptions,
+      prescriptions: finalPrescriptions,
       prescriptionStatus: {
         ...caseItem.prescriptionStatus,
         lastAssignedDate: formatLocalPrescriptionDate(now),
