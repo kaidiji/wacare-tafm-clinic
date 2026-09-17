@@ -88,16 +88,14 @@ export function reconcileQuestionnairePrescriptions({
   assignedBy: string;
   now: Date;
 }): PrescriptionTask[] {
-  const existingFromQuestionnaire = caseItem.prescriptions.filter((task) => task.sourceQuestionnaireId === questionnaire.id);
-  const unaffectedTasks = caseItem.prescriptions.filter((task) => task.sourceQuestionnaireId !== questionnaire.id);
-  const endDate = new Date(now);
-  endDate.setDate(endDate.getDate() + 27);
+  const existingFromQuestionnaire = caseItem.prescriptions.filter((task) => task.executionKind !== 'course' &&
+    weekStart(new Date(parseQuestionnaireDate(task.startDate))).getTime() === weekStart(now).getTime());
+  const unaffectedTasks = caseItem.prescriptions.filter((task) => task.executionKind === 'course');
+  const endDate = weekEnd(now);
 
   const uniqueSelections = Array.from(new Map(selections.map((selection) => [selection.definitionId, selection])).values());
   const questionnaireTasks = uniqueSelections.map((selection, index) => {
-    const existing = selection.taskId
-      ? existingFromQuestionnaire.find((task) => (task.taskId ?? task.id) === selection.taskId)
-      : existingFromQuestionnaire.find((task) => task.definitionId === selection.definitionId);
+    const existing = existingFromQuestionnaire.find((task) => task.definitionId === selection.definitionId && task.prescriptionFocus === selection.focus);
     const prescriptionId = selection.prescriptionId ?? existing?.prescriptionId ?? `prescription-${questionnaire.id}`;
     const taskId = selection.taskId ?? existing?.taskId ?? existing?.id ?? `task-${questionnaire.id}-${now.getTime()}-${index}`;
     if (existing) {
@@ -111,6 +109,10 @@ export function reconcileQuestionnairePrescriptions({
         title: selection.text,
         description: selection.text,
         exercisePrescription: selection.exercisePrescription,
+        startDate: formatLocalPrescriptionDate(now),
+        endDate: formatLocalPrescriptionDate(endDate),
+        sourceQuestionnaireId: questionnaire.id,
+        assignedBy,
         sourceQuestionnaireTitle: questionnaire.title,
         sourceQuestionnaireSubmittedAt: questionnaire.submittedAt,
       };
@@ -211,18 +213,25 @@ export function settleExecutionCycle({ caseItem, now }: { caseItem: CaseItem; no
   };
 }
 
-const WEEKLY_COURSE_SETTLEMENT_DAYS = 7;
+export function weekStart(date: Date): Date {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+  return start;
+}
+
+export function weekEnd(date: Date): Date {
+  const end = weekStart(date);
+  end.setDate(end.getDate() + 6);
+  return end;
+}
 
 /**
- * 純影片觀看（尚未經醫師指派處方）的週期每 7 天自動結算一次；
- * 一旦有醫師指派的處方，則改由指派當下立即結算（見 settleExecutionCycle 的呼叫端）。
+ * 保留既有呼叫介面：處方與課程皆按週一至週日結算，清單沿用、進度歸零。
  */
 export function settleDueCourseOnlyExecutionCycle(caseItem: CaseItem, now: Date): CaseItem {
   const tasks = caseItem.prescriptions;
   if (tasks.length === 0) return caseItem;
-
-  const hasDoctorPrescription = tasks.some((task) => task.executionKind !== 'course');
-  if (hasDoctorPrescription) return caseItem;
 
   const earliestStart = tasks.reduce(
     (earliest, task) => Math.min(earliest, parseQuestionnaireDate(task.startDate)),
@@ -230,18 +239,19 @@ export function settleDueCourseOnlyExecutionCycle(caseItem: CaseItem, now: Date)
   );
   if (!Number.isFinite(earliestStart)) return caseItem;
 
-  const dueAt = earliestStart + WEEKLY_COURSE_SETTLEMENT_DAYS * 24 * 60 * 60 * 1000;
-  if (now.getTime() < dueAt) return caseItem;
-
-  const settled = settleExecutionCycle({ caseItem, now });
-  return { ...settled, prescriptions: ensureDefaultCourseTasks(settled, now) };
+  if (weekStart(now).getTime() <= weekStart(new Date(earliestStart)).getTime()) return caseItem;
+  const settled = settleExecutionCycle({ caseItem, now: weekEnd(new Date(earliestStart)) });
+  const hasDoctorPrescription = tasks.some((task) => task.executionKind !== 'course');
+  const prescriptions = tasks.filter((task) => hasDoctorPrescription || task.executionKind !== 'course' || !hasExceededUnassignedCourseWindow(settled, now))
+    .map((task) => ({ ...task, completedCount: 0, status: 'active' as const,
+      startDate: formatLocalPrescriptionDate(weekStart(now)), endDate: formatLocalPrescriptionDate(weekEnd(now)) }));
+  return { ...settled, prescriptions };
 }
 
 const DEFAULT_COURSE_VIDEO_TITLES = ['本週課程影片 1', '本週課程影片 2', '本週課程影片 3'];
 
 function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
-  const endDate = new Date(now);
-  endDate.setDate(endDate.getDate() + 6);
+  const endDate = weekEnd(now);
   return DEFAULT_COURSE_VIDEO_TITLES.map((title, index) => ({
     id: `default-course-${index + 1}`,
     taskId: `default-course-${index + 1}`,
@@ -270,6 +280,39 @@ export function ensureDefaultCourseTasks(caseItem: CaseItem, now: Date): Prescri
   return hasCourseTasks ? caseItem.prescriptions : [...caseItem.prescriptions, ...createDefaultCourseTasks(now)];
 }
 
+const MAX_UNASSIGNED_COURSE_MONTHS = 3;
+
+/** 個案「最近一次收到處方」的時間：取歷史週期中最新一筆有指派人（assignedBy）的週期起算日。 */
+function latestPrescriptionReceivedAt(caseItem: CaseItem): number {
+  return (caseItem.executionHistory ?? []).reduce((latest, cycle) => {
+    if (!cycle.assignedBy) return latest;
+    const receivedAt = parseQuestionnaireDate(cycle.startDate);
+    return receivedAt > latest ? receivedAt : latest;
+  }, Number.NEGATIVE_INFINITY);
+}
+
+/**
+ * 「未指派處方課程上限」的起算基準 = 個案首次登入時間、最近一次收到處方時間，取兩者中較晚者。
+ * 換句話說：只要 3 個月內個案登入過、或收到過新處方，上限就會被往後遞延；
+ * 兩者都超過 3 個月未發生，系統才停止繼續產生新一週的預設課程任務
+ * （但既有週期仍會照常結算進歷史紀錄，見 settleDueCourseOnlyExecutionCycle）。
+ * 若個案從未登入過（firstLoginAt 不存在）且也從未收到過處方，視為尚無可用基準，不設定上限。
+ */
+export function hasExceededUnassignedCourseWindow(caseItem: CaseItem, now: Date): boolean {
+  const firstLoginAt = caseItem.firstLoginAt ? parseQuestionnaireDate(caseItem.firstLoginAt) : Number.NEGATIVE_INFINITY;
+  const anchor = Math.max(firstLoginAt, latestPrescriptionReceivedAt(caseItem));
+  if (!Number.isFinite(anchor)) return false;
+
+  const cutoff = new Date(anchor);
+  cutoff.setMonth(cutoff.getMonth() + MAX_UNASSIGNED_COURSE_MONTHS);
+  return now.getTime() >= cutoff.getTime();
+}
+
+function ensureDefaultCourseTasksIfWithinWindow(caseItem: CaseItem, now: Date): PrescriptionTask[] {
+  if (hasExceededUnassignedCourseWindow(caseItem, now)) return caseItem.prescriptions;
+  return ensureDefaultCourseTasks(caseItem, now);
+}
+
 export function migrateCaseItem(caseItem: CaseItem, now: Date = new Date()): CaseItem {
   const safeCase = {
     ...caseItem,
@@ -283,7 +326,7 @@ export function migrateCaseItem(caseItem: CaseItem, now: Date = new Date()): Cas
     executionLogs: Array.isArray(caseItem.executionLogs) ? caseItem.executionLogs : [],
     executionHistory: Array.isArray(caseItem.executionHistory) ? caseItem.executionHistory : [],
   };
-  const withDefaultCourses = { ...safeCase, prescriptions: ensureDefaultCourseTasks(safeCase, now) };
+  const withDefaultCourses = { ...safeCase, prescriptions: ensureDefaultCourseTasksIfWithinWindow(safeCase, now) };
   const withWeeklySettlement = settleDueCourseOnlyExecutionCycle(withDefaultCourses, now);
   return {
     ...withWeeklySettlement,

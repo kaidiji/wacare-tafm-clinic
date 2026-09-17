@@ -62,9 +62,9 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
-                  {cycle.assignedBy && (
+                  {cycle.assignedBy ? (
                     <span className="text-xs font-bold text-emerald-600">由{cycle.assignedBy}指派</span>
-                  )}
+                  ) : <span className="text-xs font-bold text-amber-600">未收到專家指派處方</span>}
                   {expanded
                     ? <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
                     : <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />}

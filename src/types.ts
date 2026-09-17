@@ -114,6 +114,8 @@ export interface CaseItem {
   bloodType: string;
   trackingDate: string;
   enrolledDate: string;
+  /** 個案本人第一次登入 App 的時間；尚未登入過則不存在。用於「未指派處方課程上限」等以個案實際使用行為起算的規則。 */
+  firstLoginAt?: string;
   program: string;
   notes: string;
   lifestyleSurvey?: {

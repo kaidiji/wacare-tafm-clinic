@@ -12,6 +12,7 @@ import {
   ensureDefaultCourseTasks,
   formatExercisePrescription,
   getQuestionnaireHistory,
+  hasExceededUnassignedCourseWindow,
   hasQuestionnaireAssignment,
   migrateCaseItem,
   reconcileQuestionnairePrescriptions,
@@ -141,7 +142,7 @@ const firstAssignment = reconcileQuestionnairePrescriptions({
 });
 assert.equal(firstAssignment.length, 4);
 assert.equal(firstAssignment[0].startDate, '2026/09/09');
-assert.equal(firstAssignment[0].endDate, '2026/10/06');
+assert.equal(firstAssignment[0].endDate, '2026/09/13');
 assert.equal(
   firstAssignment.every((task) => Boolean(task.taskId && task.prescriptionId && task.sourceQuestionnaireId)),
   true,
@@ -275,13 +276,13 @@ const dietEditedAlongsideSleep = reconcileQuestionnairePrescriptions({
   now: new Date(2026, 8, 11, 11, 0),
 });
 assert.equal(hasQuestionnaireAssignment(dietEditedAlongsideSleep, questionnaire.id), true);
-assert.equal(hasQuestionnaireAssignment(dietEditedAlongsideSleep, sleepQuestionnaire.id), true);
+assert.equal(hasQuestionnaireAssignment(dietEditedAlongsideSleep, sleepQuestionnaire.id), false);
 assert.deepEqual(
   dietEditedAlongsideSleep
     .filter((task) => task.sourceQuestionnaireId === sleepQuestionnaire.id)
     .map((task) => task.id)
     .sort(),
-  sleepIds,
+  [],
 );
 
 const withAdvanced = reconcileQuestionnairePrescriptions({
@@ -401,20 +402,23 @@ assert.equal(settledMixedCycle.courses.length, 3);
 assert.equal(settledMixedCycle.assignedBy, '測試醫師');
 assert.equal(settledMixed.prescriptions.length, 0);
 
-// 週結算規則（7 天一個週期）：未滿 7 天不結算；滿 7 天且僅有課程才自動結算；一旦有醫師處方則不適用週結
+// 週結算規則：週一至週日，已指派處方與純課程皆適用。
 const weeklyBaseline = new Date(2026, 8, 9, 8, 0);
 const courseOnlyForWeekly = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, weeklyBaseline);
-const notDueYet = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 15, 8, 0));
+const notDueYet = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 13, 23, 59));
 assert.equal(notDueYet, courseOnlyForWeekly);
 const dueSettlement = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
 assert.equal(dueSettlement.executionHistory?.length, 1);
 assert.equal(dueSettlement.prescriptions.length, 3);
 assert.equal(dueSettlement.prescriptions.every((task) => task.executionKind === 'course' && task.completedCount === 0), true);
-assert.equal(dueSettlement.prescriptions[0].startDate, '2026/09/16');
+assert.equal(dueSettlement.prescriptions[0].startDate, '2026/09/14');
+assert.equal(dueSettlement.executionHistory?.[0].endDate, '2026/09/13');
 
 const mixedForWeekly = { ...courseOnlyForWeekly, prescriptions: [...courseOnlyForWeekly.prescriptions, firstAssignment[0]] };
 const notSettledDueToPrescription = settleDueCourseOnlyExecutionCycle(mixedForWeekly, new Date(2026, 8, 20, 8, 0));
-assert.equal(notSettledDueToPrescription, mixedForWeekly);
+assert.equal(notSettledDueToPrescription.prescriptions.length, mixedForWeekly.prescriptions.length);
+assert.equal(notSettledDueToPrescription.prescriptions.every((task) => task.completedCount === 0), true);
+assert.equal(notSettledDueToPrescription.executionHistory?.length, 1);
 
 // migrateCaseItem 載入個案時會自動套用週結算
 const migratedAfterAWeek = migrateCaseItem(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
@@ -439,4 +443,69 @@ assert.equal(settledBeforeAssignment.executionHistory![0].assignedBy, undefined)
 assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind === 'course').length, 3);
 assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind !== 'course').length, selections.length);
 
+// ---- 未指派處方課程上限：起算基準 = 首次登入(firstLoginAt) 與 最近一次收到處方時間，取較晚者 ----
+// （mock 資料 firstLoginAt 為 2026/7/16 19:20，無任何指派紀錄時 3 個月後的界線為 2026/10/16 19:20）
+
+// 完全沒有首次登入紀錄、也從未收到過處方：視為尚無可用基準，不設上限
+const noAnchorCase = { ...cloneCase(), prescriptions: [], executionHistory: [], firstLoginAt: undefined };
+assert.equal(hasExceededUnassignedCourseWindow(noAnchorCase, new Date(2035, 0, 1)), false);
+
+const neverAssignedCase = { ...cloneCase(), prescriptions: [], executionHistory: [] };
+assert.equal(hasExceededUnassignedCourseWindow(neverAssignedCase, new Date(2026, 9, 16, 19, 0)), false);
+assert.equal(hasExceededUnassignedCourseWindow(neverAssignedCase, new Date(2026, 9, 16, 19, 20)), true);
+
+// 收到處方的時間比首次登入晚：基準改用收到處方的時間，且上限只是往後遞延，並非永久解除
+const laterAssignedCase = {
+  ...neverAssignedCase,
+  executionHistory: [{
+    id: 'once-assigned',
+    startDate: '2026/08/10',
+    endDate: '2026/08/16',
+    assignedBy: '測試醫師',
+    expertPrescriptions: [],
+    courses: [],
+  }],
+};
+assert.equal(hasExceededUnassignedCourseWindow(laterAssignedCase, new Date(2026, 10, 9)), false);
+assert.equal(hasExceededUnassignedCourseWindow(laterAssignedCase, new Date(2026, 10, 10)), true);
+
+// 多筆指派紀錄時取最近一次
+const multipleAssignedCase = {
+  ...neverAssignedCase,
+  executionHistory: [
+    { id: 'a', startDate: '2026/07/20', endDate: '2026/07/26', assignedBy: '測試醫師', expertPrescriptions: [], courses: [] },
+    { id: 'b', startDate: '2026/09/01', endDate: '2026/09/07', assignedBy: '測試醫師', expertPrescriptions: [], courses: [] },
+  ],
+};
+assert.equal(hasExceededUnassignedCourseWindow(multipleAssignedCase, new Date(2026, 10, 30)), false);
+assert.equal(hasExceededUnassignedCourseWindow(multipleAssignedCase, new Date(2026, 11, 1)), true);
+
+// 第一次載入就已超過上限：不產生任何預設課程任務
+const migratedPastCutoff = migrateCaseItem(neverAssignedCase, new Date(2026, 9, 20, 9, 0));
+assert.equal(migratedPastCutoff.prescriptions.length, 0);
+
+// 週期進行到一半才跨過上限界線：最後一個課程週期仍會正常結算進歷史紀錄，但不再產生下一週
+const idleCaseBeforeCutoff = migrateCaseItem(neverAssignedCase, new Date(2026, 9, 10, 9, 0));
+assert.equal(idleCaseBeforeCutoff.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+const idleCaseAfterCutoff = settleDueCourseOnlyExecutionCycle(idleCaseBeforeCutoff, new Date(2026, 9, 20, 9, 0));
+assert.equal(idleCaseAfterCutoff.executionHistory?.length, (idleCaseBeforeCutoff.executionHistory?.length ?? 0) + 1);
+assert.equal(idleCaseAfterCutoff.prescriptions.length, 0);
+
+// 最近一次現行處方限定：移除後再加入不回溯舊紀錄；跨問卷仍可繼承。
+const sixSelections = Array.from({ length: 6 }, (_, index) => ({ ...selections[0], definitionId: `A${index + 1}`, text: `A${index + 1}` }));
+const mondayTasks = reconcileQuestionnairePrescriptions({ caseItem: emptyCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 14, 9) })
+  .map((task) => ({ ...task, completedCount: 1 }));
+const thursdayTasks = reconcileQuestionnairePrescriptions({ caseItem: { ...emptyCase, prescriptions: mondayTasks }, questionnaire: { ...questionnaire, id: 'thursday' }, selections: sixSelections.slice(0, 4), assignedBy: '測試醫師', now: new Date(2026, 8, 17, 9) });
+assert.equal(thursdayTasks.length, 4);
+assert.equal(thursdayTasks.every((task) => task.completedCount === 1 && task.sourceQuestionnaireId === 'thursday'), true);
+const sundayTasks = reconcileQuestionnairePrescriptions({ caseItem: { ...emptyCase, prescriptions: thursdayTasks }, questionnaire: { ...questionnaire, id: 'sunday' }, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 20, 9) });
+assert.deepEqual(sundayTasks.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
+assert.equal(sundayTasks.every((task) => task.endDate === '2026/09/20'), true);
+const nextWeekCase = settleDueCourseOnlyExecutionCycle({ ...emptyCase, prescriptions: sundayTasks, executionHistory: [] }, new Date(2026, 8, 21, 0, 1));
+assert.equal(nextWeekCase.executionHistory?.[0].endDate, '2026/09/20');
+assert.equal(nextWeekCase.prescriptions.length, 6);
+assert.equal(nextWeekCase.prescriptions.every((task) => task.completedCount === 0 && task.endDate === '2026/09/27'), true);
+assert.equal(settleDueCourseOnlyExecutionCycle(nextWeekCase, new Date(2026, 8, 21, 1)), nextWeekCase);
+const nextAssignment = reconcileQuestionnairePrescriptions({ caseItem: nextWeekCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 21, 1) });
+assert.equal(nextAssignment.every((task) => task.completedCount === 0), true);
 console.log('green prescription validation: PASS');

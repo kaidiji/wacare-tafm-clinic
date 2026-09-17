@@ -15,6 +15,7 @@ export const INITIAL_CASES: CaseItem[] = [
     bloodType: 'O型',
     trackingDate: '2026/8/20 10:30',
     enrolledDate: '2026/7/15 09:00',
+    firstLoginAt: '2026/7/16 19:20',
     program: '慢病管理計畫',
     notes: '定期追蹤血壓與環境空污',
     lifestyleSurvey: {

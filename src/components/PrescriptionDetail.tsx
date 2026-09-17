@@ -22,6 +22,7 @@ import {
   hasQuestionnaireAssignment,
   reconcileQuestionnairePrescriptions,
   settleExecutionCycle,
+  settleDueCourseOnlyExecutionCycle,
 } from '../utils/greenPrescriptionDomain';
 
 interface PrescriptionDetailProps {
@@ -47,10 +48,11 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
     if (!selectedQuestionnaire) return;
 
     const now = new Date();
-    // 派發新處方時立即結算當前週期（含此前純課程觀看紀錄），並從全新週期開始。
-    const settledCase = settleExecutionCycle({ caseItem, now });
+    // 跨週先結算；同週保存舊快照但保留現行清單供進度繼承。
+    const currentCase = settleDueCourseOnlyExecutionCycle(caseItem, now);
+    const settledCase = currentCase === caseItem ? settleExecutionCycle({ caseItem, now }) : currentCase;
     const prescriptions = reconcileQuestionnairePrescriptions({
-      caseItem: settledCase,
+      caseItem: { ...currentCase, prescriptions: currentCase.prescriptions.filter((task) => task.executionKind !== 'course') },
       questionnaire: selectedQuestionnaire,
       selections: items,
       assignedBy: '王志銘醫師',

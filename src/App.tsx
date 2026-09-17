@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { CaseOverview } from './components/CaseOverview';
@@ -9,11 +9,20 @@ import { MessagesView, ExportView, CoursesView, AiReplyView } from './components
 import { INITIAL_CASES } from './data/mockCases';
 import { CaseItem } from './types';
 import { synchronizePrescriptionStatus } from './utils/greenPrescriptionMetrics';
-import { createPrototypeCases } from './utils/greenPrescriptionDomain';
+import { createPrototypeCases, settleDueCourseOnlyExecutionCycle } from './utils/greenPrescriptionDomain';
 
 export default function App() {
   // Prototype 操作只保留於本次頁面生命週期；重新整理時一律回到程式內建 Demo state。
   const [cases, setCases] = useState<CaseItem[]>(() => createPrototypeCases(INITIAL_CASES));
+  useEffect(() => {
+    const check = () => setCases((prev) => prev.map((item) => {
+      const next = settleDueCourseOnlyExecutionCycle(item, new Date());
+      return next === item ? item : synchronizePrescriptionStatus(next);
+    }));
+    const timer = setInterval(check, 60000);
+    window.addEventListener('focus', check);
+    return () => { clearInterval(timer); window.removeEventListener('focus', check); };
+  }, []);
   const [currentTab, setCurrentTab] = useState<string>('cases');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
