@@ -28,6 +28,7 @@ import {
 } from '../src/utils/prescriptionExecutionHistory';
 import {
   calculateCurrentGreenPrescriptionSummary,
+  getCurrentPeriodRangeLabel,
   groupCurrentPrescriptionTasks,
 } from '../src/utils/currentGreenPrescriptionExecution';
 
@@ -97,8 +98,9 @@ assert.deepEqual(
   ['newer-cycle', demoExecutionCycle.id],
 );
 
-assert.equal(normalizeSurveyFocus('戒菸 / 戒酒 / 戒檳榔'), '戒菸／戒酒／戒檳榔');
-assert.equal(normalizeSurveyFocus('避免危害物質使用'), '戒菸／戒酒／戒檳榔');
+assert.equal(normalizeSurveyFocus('戒菸 / 戒酒 / 戒檳榔'), '戒菸 / 戒酒 / 戒檳榔');
+assert.equal(normalizeSurveyFocus('戒菸／戒酒／戒檳榔'), '戒菸 / 戒酒 / 戒檳榔');
+assert.equal(normalizeSurveyFocus('避免危害物質使用'), '戒菸 / 戒酒 / 戒檳榔');
 assert.equal(normalizeSurveyFocus('身體活動'), '運動習慣');
 assert.equal(normalizeSurveyFocus('社會連結'), '增加人際互動');
 assert.deepEqual(
@@ -110,7 +112,17 @@ assert.equal(getPrescriptionGroupsForInterests([]).length, 0);
 const dietGroups = getPrescriptionGroupsForInterests(['飲食習慣']);
 assert.deepEqual(dietGroups.map((group) => group.focus), ['飲食']);
 const activityGroup = getPrescriptionGroupsForInterests(['運動習慣'])[0];
-assert.deepEqual(activityGroup.advanced.map((section) => section.title), ['推薦運動', '運動頻率', '每次運動時間']);
+assert.deepEqual(activityGroup.advanced.map((section) => section.title), ['個別化加強處方', '推薦運動', '運動頻率', '每次運動時間']);
+// 150 分鐘改列個別化加強處方（獨立項目），基本處方只保留逐步增加活動量
+assert.deepEqual(activityGroup.basic, ['依個人體能及健康狀況逐步增加活動量']);
+assert.deepEqual(activityGroup.advanced[0].options, ['建議每週運動150分鐘']);
+// 刪除的個別化加強處方不得再出現
+const allCatalogTexts = getPrescriptionGroupsForInterests(['飲食習慣', '運動習慣', '睡眠品質', '壓力管理', '增加人際互動', '戒菸 / 戒酒 / 戒檳榔'])
+  .flatMap((group) => [...group.basic, ...group.advanced.flatMap((section) => section.options)]);
+assert.equal(allCatalogTexts.includes('控制甜食攝取'), false);
+assert.equal(allCatalogTexts.includes('固定起床時間'), false);
+assert.equal(allCatalogTexts.some((text) => text.includes('每週累積至少 150 分鐘')), false);
+assert.equal(allCatalogTexts.filter((text) => text.includes('150')).length, 1);
 const exercisePrescription = {
   exerciseType: '重量訓練',
   frequency: '每週 3~4 天',
@@ -142,7 +154,7 @@ const firstAssignment = reconcileQuestionnairePrescriptions({
 });
 assert.equal(firstAssignment.length, 4);
 assert.equal(firstAssignment[0].startDate, '2026/09/09');
-assert.equal(firstAssignment[0].endDate, '2026/09/13');
+assert.equal(firstAssignment[0].endDate, '2026/10/08');
 assert.equal(
   firstAssignment.every((task) => Boolean(task.taskId && task.prescriptionId && task.sourceQuestionnaireId)),
   true,
@@ -180,7 +192,7 @@ const activityAssignment = reconcileQuestionnairePrescriptions({
   now: new Date(2026, 8, 9, 10, 0),
 });
 const activityAdvanced = activityAssignment.filter((task) => task.prescriptionLevel === '加強處方');
-assert.equal(activityAssignment.length, 3);
+assert.equal(activityAssignment.length, 2);
 assert.equal(activityAdvanced.length, 1);
 assert.deepEqual(activityAdvanced[0].exercisePrescription, exercisePrescription);
 assert.equal(activityAdvanced[0].description, '每週 3~4 天中進行20-30分鐘的重量訓練');
@@ -203,7 +215,7 @@ const editedActivityAssignment = reconcileQuestionnairePrescriptions({
   now: new Date(2026, 8, 10, 10, 0),
 });
 const editedActivityAdvanced = editedActivityAssignment.filter((task) => task.prescriptionLevel === '加強處方');
-assert.equal(editedActivityAssignment.length, 3);
+assert.equal(editedActivityAssignment.length, 2);
 assert.equal(editedActivityAdvanced.length, 1);
 assert.equal(editedActivityAdvanced[0].id, activityAdvanced[0].id);
 assert.equal(editedActivityAdvanced[0].taskId, activityAdvanced[0].taskId);
@@ -219,6 +231,41 @@ assert.equal(
   groupCurrentPrescriptionTasks(editedActivityAssignment).reduce((total, group) => total + group.tasks.length, 0),
   editedActivitySummary.prescriptionTotal,
 );
+
+// 建議每週運動150分鐘：獨立的加強處方，不帶運動項目、頻率與時間
+const weeklyGoalSelection = {
+  definitionId: '運動習慣-advanced-1-1',
+  focus: activityGroup.focus,
+  text: activityGroup.advanced[0].options[0],
+  level: '加強處方' as const,
+  category: activityGroup.category,
+};
+const weeklyGoalAssignment = reconcileQuestionnairePrescriptions({
+  caseItem: emptyCase,
+  questionnaire: activityQuestionnaire,
+  selections: [...activitySelections.filter((selection) => selection.level === '基本處方'), weeklyGoalSelection],
+  assignedBy: '測試醫師',
+  now: new Date(2026, 8, 9, 10, 0),
+});
+const weeklyGoalTask = weeklyGoalAssignment.find((task) => task.definitionId === weeklyGoalSelection.definitionId);
+assert.equal(weeklyGoalAssignment.length, 2);
+assert.equal(weeklyGoalTask?.title, '建議每週運動150分鐘');
+assert.equal(weeklyGoalTask?.prescriptionLevel, '加強處方');
+assert.equal(weeklyGoalTask?.exercisePrescription, undefined);
+assert.deepEqual(
+  groupCurrentPrescriptionTasks(weeklyGoalAssignment).map((group) => [group.label, group.tasks.length]),
+  [['身體活動', 2]],
+);
+// 與其他運動加強處方並存，各自獨立
+const weeklyGoalWithExercise = reconcileQuestionnairePrescriptions({
+  caseItem: emptyCase,
+  questionnaire: activityQuestionnaire,
+  selections: [...activitySelections, weeklyGoalSelection],
+  assignedBy: '測試醫師',
+  now: new Date(2026, 8, 9, 10, 0),
+});
+assert.equal(weeklyGoalWithExercise.length, 3);
+assert.equal(weeklyGoalWithExercise.filter((task) => task.prescriptionLevel === '加強處方').length, 2);
 
 const progressed = firstAssignment.map((task, index) => index === 0 ? { ...task, completedCount: 1, status: 'completed' as const } : task);
 const renamedSelections = selections.map((selection, index) => index === 0
@@ -402,28 +449,62 @@ assert.equal(settledMixedCycle.courses.length, 3);
 assert.equal(settledMixedCycle.assignedBy, '測試醫師');
 assert.equal(settledMixed.prescriptions.length, 0);
 
-// 週結算規則：週一至週日，已指派處方與純課程皆適用。
-const weeklyBaseline = new Date(2026, 8, 9, 8, 0);
-const courseOnlyForWeekly = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, weeklyBaseline);
-const notDueYet = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 13, 23, 59));
-assert.equal(notDueYet, courseOnlyForWeekly);
-const dueSettlement = settleDueCourseOnlyExecutionCycle(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
-assert.equal(dueSettlement.executionHistory?.length, 1);
-assert.equal(dueSettlement.prescriptions.length, 3);
-assert.equal(dueSettlement.prescriptions.every((task) => task.executionKind === 'course' && task.completedCount === 0), true);
-assert.equal(dueSettlement.prescriptions[0].startDate, '2026/09/14');
-assert.equal(dueSettlement.executionHistory?.[0].endDate, '2026/09/13');
+// 30 天週期規則：專家指派處方後才開始；未指派（僅預設課程）不結算。
+const periodBaseline = new Date(2026, 8, 9, 8, 0);
+const courseOnlyForPeriod = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, periodBaseline);
+const courseOnlyLater = settleDueCourseOnlyExecutionCycle(courseOnlyForPeriod, new Date(2026, 9, 20, 8, 0));
+assert.equal(courseOnlyLater, courseOnlyForPeriod);
+assert.equal(courseOnlyLater.executionHistory?.length, 0);
+assert.equal(getCurrentPeriodRangeLabel(courseOnlyForPeriod.prescriptions), null);
 
-const mixedForWeekly = { ...courseOnlyForWeekly, prescriptions: [...courseOnlyForWeekly.prescriptions, firstAssignment[0]] };
-const notSettledDueToPrescription = settleDueCourseOnlyExecutionCycle(mixedForWeekly, new Date(2026, 8, 20, 8, 0));
-assert.equal(notSettledDueToPrescription.prescriptions.length, mixedForWeekly.prescriptions.length);
-assert.equal(notSettledDueToPrescription.prescriptions.every((task) => task.completedCount === 0), true);
-assert.equal(notSettledDueToPrescription.executionHistory?.length, 1);
+const assignedForPeriod = {
+  ...courseOnlyForPeriod,
+  prescriptions: [
+    ...courseOnlyForPeriod.prescriptions,
+    ...firstAssignment.map((task, index) => (index === 0 ? { ...task, completedCount: 1, status: 'completed' as const } : task)),
+  ],
+};
+assert.equal(getCurrentPeriodRangeLabel(assignedForPeriod.prescriptions), '2026/09/09（三）～2026/10/08（四）');
+// 週期最後一天 23:59 尚未到期；滿 30 天（10/09 00:00）才結算
+assert.equal(settleDueCourseOnlyExecutionCycle(assignedForPeriod, new Date(2026, 9, 8, 23, 59)), assignedForPeriod);
+const periodSettled = settleDueCourseOnlyExecutionCycle(assignedForPeriod, new Date(2026, 9, 9, 0, 0));
+assert.equal(periodSettled.executionHistory?.length, 1);
+assert.equal(periodSettled.executionHistory?.[0].startDate, '2026/09/09');
+assert.equal(periodSettled.executionHistory?.[0].endDate, '2026/10/08');
+assert.equal(periodSettled.executionHistory?.[0].assignedBy, '測試醫師');
+// 結算後清單與累積進度保留，只更新為新週期日期
+assert.equal(periodSettled.prescriptions.length, assignedForPeriod.prescriptions.length);
+assert.deepEqual(
+  periodSettled.prescriptions.map((task) => task.completedCount),
+  assignedForPeriod.prescriptions.map((task) => task.completedCount),
+);
+assert.equal(periodSettled.prescriptions.every((task) => task.startDate === '2026/10/09' && task.endDate === '2026/11/07'), true);
+assert.equal(getCurrentPeriodRangeLabel(periodSettled.prescriptions), '2026/10/09（五）～2026/11/07（六）');
+// 同一時間點不會重複結算
+assert.equal(settleDueCourseOnlyExecutionCycle(periodSettled, new Date(2026, 9, 9, 1, 0)), periodSettled);
 
-// migrateCaseItem 載入個案時會自動套用週結算
-const migratedAfterAWeek = migrateCaseItem(courseOnlyForWeekly, new Date(2026, 8, 16, 8, 0));
-assert.equal(migratedAfterAWeek.executionHistory?.length, 1);
-assert.equal(migratedAfterAWeek.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+// migrateCaseItem 載入個案時：純課程個案不會因為時間經過而結算
+const migratedAfterAMonth = migrateCaseItem(courseOnlyForPeriod, new Date(2026, 9, 9, 8, 0));
+assert.equal(migratedAfterAMonth.executionHistory?.length, 0);
+assert.equal(migratedAfterAMonth.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+
+// 重新指派時課程任務保留進度，並改用新週期日期
+const courseProgressedCase = {
+  ...courseOnlyForPeriod,
+  prescriptions: courseOnlyForPeriod.prescriptions.map((task, index) => (index === 0 ? { ...task, completedCount: 1 } : task)),
+};
+const assignedWithCourses = reconcileQuestionnairePrescriptions({
+  caseItem: courseProgressedCase,
+  questionnaire,
+  selections,
+  assignedBy: '測試醫師',
+  now: new Date(2026, 8, 24, 10, 0),
+});
+const carriedCourses = assignedWithCourses.filter((task) => task.executionKind === 'course');
+assert.equal(carriedCourses.length, 3);
+assert.deepEqual(carriedCourses.map((task) => task.completedCount), [1, 0, 0]);
+assert.equal(carriedCourses.every((task) => task.startDate === '2026/09/24' && task.endDate === '2026/10/23'), true);
+assert.equal(getCurrentPeriodRangeLabel(assignedWithCourses), '2026/09/24（四）～2026/10/23（五）');
 
 // 模擬醫師依新問卷指派處方的完整流程：立即結算舊週期 -> 套用新處方 -> 補齊新週期課程
 const beforeAssignmentCase = migrateCaseItem({ ...cloneCase(), prescriptions: [], executionHistory: [] }, new Date(2026, 8, 9, 8, 0));
@@ -484,14 +565,12 @@ assert.equal(hasExceededUnassignedCourseWindow(multipleAssignedCase, new Date(20
 const migratedPastCutoff = migrateCaseItem(neverAssignedCase, new Date(2026, 9, 20, 9, 0));
 assert.equal(migratedPastCutoff.prescriptions.length, 0);
 
-// 週期進行到一半才跨過上限界線：最後一個課程週期仍會正常結算進歷史紀錄，但不再產生下一週
+// 純課程（未指派處方）不啟動週期，因此跨過上限界線也不會結算或清除既有課程任務
 const idleCaseBeforeCutoff = migrateCaseItem(neverAssignedCase, new Date(2026, 9, 10, 9, 0));
 assert.equal(idleCaseBeforeCutoff.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
-const idleCaseAfterCutoff = settleDueCourseOnlyExecutionCycle(idleCaseBeforeCutoff, new Date(2026, 9, 20, 9, 0));
-assert.equal(idleCaseAfterCutoff.executionHistory?.length, (idleCaseBeforeCutoff.executionHistory?.length ?? 0) + 1);
-assert.equal(idleCaseAfterCutoff.prescriptions.length, 0);
+assert.equal(settleDueCourseOnlyExecutionCycle(idleCaseBeforeCutoff, new Date(2026, 9, 20, 9, 0)), idleCaseBeforeCutoff);
 
-// 最近一次現行處方限定：移除後再加入不回溯舊紀錄；跨問卷仍可繼承。
+// 最近一次現行處方限定：移除後再加入不回溯舊紀錄；跨問卷仍可繼承（同一 30 天週期內）。
 const sixSelections = Array.from({ length: 6 }, (_, index) => ({ ...selections[0], definitionId: `A${index + 1}`, text: `A${index + 1}` }));
 const mondayTasks = reconcileQuestionnairePrescriptions({ caseItem: emptyCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 14, 9) })
   .map((task) => ({ ...task, completedCount: 1 }));
@@ -500,12 +579,15 @@ assert.equal(thursdayTasks.length, 4);
 assert.equal(thursdayTasks.every((task) => task.completedCount === 1 && task.sourceQuestionnaireId === 'thursday'), true);
 const sundayTasks = reconcileQuestionnairePrescriptions({ caseItem: { ...emptyCase, prescriptions: thursdayTasks }, questionnaire: { ...questionnaire, id: 'sunday' }, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 20, 9) });
 assert.deepEqual(sundayTasks.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
-assert.equal(sundayTasks.every((task) => task.endDate === '2026/09/20'), true);
-const nextWeekCase = settleDueCourseOnlyExecutionCycle({ ...emptyCase, prescriptions: sundayTasks, executionHistory: [] }, new Date(2026, 8, 21, 0, 1));
-assert.equal(nextWeekCase.executionHistory?.[0].endDate, '2026/09/20');
-assert.equal(nextWeekCase.prescriptions.length, 6);
-assert.equal(nextWeekCase.prescriptions.every((task) => task.completedCount === 0 && task.endDate === '2026/09/27'), true);
-assert.equal(settleDueCourseOnlyExecutionCycle(nextWeekCase, new Date(2026, 8, 21, 1)), nextWeekCase);
-const nextAssignment = reconcileQuestionnairePrescriptions({ caseItem: nextWeekCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 21, 1) });
-assert.equal(nextAssignment.every((task) => task.completedCount === 0), true);
+// 每次指派都由當天開始新的 30 天週期
+assert.equal(sundayTasks.every((task) => task.startDate === '2026/09/20' && task.endDate === '2026/10/19'), true);
+const nextPeriodCase = settleDueCourseOnlyExecutionCycle({ ...emptyCase, prescriptions: sundayTasks, executionHistory: [] }, new Date(2026, 9, 20, 0, 1));
+assert.equal(nextPeriodCase.executionHistory?.[0].endDate, '2026/10/19');
+assert.equal(nextPeriodCase.prescriptions.length, 6);
+// 到期後累積進度保留，僅更新為新週期日期
+assert.deepEqual(nextPeriodCase.prescriptions.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
+assert.equal(nextPeriodCase.prescriptions.every((task) => task.startDate === '2026/10/20' && task.endDate === '2026/11/18'), true);
+assert.equal(settleDueCourseOnlyExecutionCycle(nextPeriodCase, new Date(2026, 9, 20, 1)), nextPeriodCase);
+const nextAssignment = reconcileQuestionnairePrescriptions({ caseItem: nextPeriodCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 9, 20, 1) });
+assert.deepEqual(nextAssignment.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
 console.log('green prescription validation: PASS');

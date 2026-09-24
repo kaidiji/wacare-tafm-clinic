@@ -4,6 +4,7 @@ import { PrescriptionTask } from '../types';
 import {
   calculateCurrentExecutionTaskProgress,
   calculateCurrentGreenPrescriptionSummary,
+  getCurrentPeriodRangeLabel,
   groupCurrentPrescriptionTasks,
 } from '../utils/currentGreenPrescriptionExecution';
 
@@ -39,11 +40,13 @@ export const CurrentPrescriptionExecution: React.FC<CurrentPrescriptionExecution
     [tasks],
   );
   const prescriptionGroups = useMemo(() => groupCurrentPrescriptionTasks(prescriptions), [prescriptions]);
+  const periodRange = useMemo(() => getCurrentPeriodRangeLabel(tasks), [tasks]);
 
   return (
     <div data-current-green-summary={`${summary.completedTotal}/${summary.totalCount}`}>
       <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <h3 className="text-sm font-black text-zinc-900">本週綠色處方</h3>
+        <h3 className="text-sm font-black text-zinc-900">本期綠色處方</h3>
+        {periodRange && <p className="mt-1 text-sm font-medium text-zinc-500" aria-label="本期任務週期">{periodRange}</p>}
         <div className="mt-3 flex items-end gap-3">
           <span className="text-3xl font-black tracking-tight text-zinc-900">{summary.completedTotal} / {summary.totalCount}</span>
           <span className="pb-1 text-sm font-bold text-zinc-500">{summary.overallRate}%</span>

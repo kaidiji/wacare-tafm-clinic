@@ -65,6 +65,34 @@ export function calculateCurrentGreenPrescriptionSummary({
   };
 }
 
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+const parsePeriodDate = (value: string): Date | null => {
+  const match = value.trim().match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatPeriodDate = (date: Date) =>
+  `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}（${WEEKDAY_LABELS[date.getDay()]}）`;
+
+/**
+ * 本期日期區間，例如「2026/09/24（四）～2026/10/23（五）」。
+ * 專家尚未指派處方時週期還沒開始，回傳 null（畫面留白）。
+ */
+export function getCurrentPeriodRangeLabel(
+  tasks: Pick<PrescriptionTask, 'executionKind' | 'startDate' | 'endDate'>[],
+): string | null {
+  const doctorTasks = tasks.filter((task) => task.executionKind !== 'course');
+  const starts = doctorTasks.map((task) => parsePeriodDate(task.startDate)).filter((date): date is Date => date !== null);
+  const ends = doctorTasks.map((task) => parsePeriodDate(task.endDate)).filter((date): date is Date => date !== null);
+  if (starts.length === 0 || ends.length === 0) return null;
+  const start = new Date(Math.min(...starts.map((date) => date.getTime())));
+  const end = new Date(Math.max(...ends.map((date) => date.getTime())));
+  return `${formatPeriodDate(start)}～${formatPeriodDate(end)}`;
+}
+
 export function groupCurrentPrescriptionTasks(prescriptions: PrescriptionTask[]) {
   const groups = new Map<string, PrescriptionTask[]>();
   prescriptions.filter((task) => task.executionKind !== 'course').forEach((task) => {

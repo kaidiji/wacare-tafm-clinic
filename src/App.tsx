@@ -15,10 +15,14 @@ export default function App() {
   // Prototype 操作只保留於本次頁面生命週期；重新整理時一律回到程式內建 Demo state。
   const [cases, setCases] = useState<CaseItem[]>(() => createPrototypeCases(INITIAL_CASES));
   useEffect(() => {
-    const check = () => setCases((prev) => prev.map((item) => {
-      const next = settleDueCourseOnlyExecutionCycle(item, new Date());
-      return next === item ? item : synchronizePrescriptionStatus(next);
-    }));
+    const check = () => setCases((prev) => {
+      const next = prev.map((item) => {
+        const settled = settleDueCourseOnlyExecutionCycle(item, new Date());
+        return settled === item ? item : synchronizePrescriptionStatus(settled);
+      });
+      // 沒有個案需要結算時沿用原陣列，避免無謂重繪（重繪會清掉指派視窗中尚未送出的勾選）。
+      return next.some((item, index) => item !== prev[index]) ? next : prev;
+    });
     const timer = setInterval(check, 60000);
     window.addEventListener('focus', check);
     return () => { clearInterval(timer); window.removeEventListener('focus', check); };

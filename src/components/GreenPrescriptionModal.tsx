@@ -12,6 +12,7 @@ export type SelectedPrescription = PrescriptionSelection;
 
 type ExerciseField = keyof ExercisePrescriptionDetails;
 interface ExerciseDraft {
+  weeklyGoal: boolean;
   exerciseTypes: string[];
   frequency: string;
   duration: string;
@@ -19,6 +20,7 @@ interface ExerciseDraft {
 }
 
 const EMPTY_EXERCISE_DRAFT: ExerciseDraft = {
+  weeklyGoal: false,
   exerciseTypes: [],
   frequency: '',
   duration: '',
@@ -48,6 +50,10 @@ const exerciseTypeDefinitionId = (group: GreenPrescriptionGroup, optionIndex: nu
   `${group.surveyFocus}-exercise-plan-${optionIndex + 1}`;
 const findExerciseTypeSection = (group: GreenPrescriptionGroup) =>
   group.advanced.find((section) => exerciseFieldBySection[section.title] === 'exerciseType');
+// 身體活動的「個別化加強處方」是獨立項目（建議每週運動150分鐘），不需搭配運動項目、頻率與時間。
+const INDIVIDUAL_ADVANCED_TITLE = '個別化加強處方';
+const findWeeklyGoalSection = (group: GreenPrescriptionGroup) =>
+  group.advanced.findIndex((section) => section.title === INDIVIDUAL_ADVANCED_TITLE);
 
 interface GreenPrescriptionModalProps {
   isOpen: boolean;
@@ -102,6 +108,12 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
       if (group.focus === '身體活動') {
         const draft: ExerciseDraft = { ...EMPTY_EXERCISE_DRAFT, exerciseTypes: [] };
         const exerciseTypeSection = findExerciseTypeSection(group);
+        const weeklyGoalSectionIndex = findWeeklyGoalSection(group);
+        if (weeklyGoalSectionIndex !== -1) {
+          draft.weeklyGoal = existingForGroup.some(
+            (task) => task.definitionId === advancedDefinitionId(group, weeklyGoalSectionIndex, 0),
+          );
+        }
         const exerciseTasksForGroup = existingForGroup.filter((task) => !!task.exercisePrescription);
         if (exerciseTypeSection) {
           exerciseTypeSection.options.forEach((option, optionIndex) => {
@@ -163,6 +175,10 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     }));
   };
 
+  const toggleWeeklyGoal = (focus: string) => {
+    setExerciseDraft(focus, (draft) => ({ ...draft, weeklyGoal: !draft.weeklyGoal }));
+  };
+
   const toggleExerciseType = (focus: string, option: string) => {
     setExerciseDraft(focus, (draft) => {
       const isSelected = draft.exerciseTypes.includes(option);
@@ -208,7 +224,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
     const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
     const isComplete = draft.exerciseTypes.length > 0 && Boolean(draft.frequency) && Boolean(draft.duration)
       && (!draft.exerciseTypes.includes('其他') || draft.customExerciseType.trim());
-    return sum + (isComplete ? draft.exerciseTypes.length : 0);
+    return sum + (draft.weeklyGoal ? 1 : 0) + (isComplete ? draft.exerciseTypes.length : 0);
   }, 0);
   const hasIncompleteSelection = hasIncompleteOther || hasIncompleteExercise;
   const totalBasicCount = matchedGroups.reduce((sum, group) => sum + group.basic.length, 0);
@@ -241,10 +257,26 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
       group.focus === '身體活動'
         ? (() => {
             const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;
-            if (!draft.exerciseTypes.length || !draft.frequency || !draft.duration) return [];
+            const weeklyGoalSectionIndex = findWeeklyGoalSection(group);
+            const weeklyGoalItems: SelectedPrescription[] = draft.weeklyGoal && weeklyGoalSectionIndex !== -1
+              ? (() => {
+                  const definitionId = advancedDefinitionId(group, weeklyGoalSectionIndex, 0);
+                  const existing = existingPrescriptions.find((task) => task.definitionId === definitionId);
+                  return [{
+                    definitionId,
+                    taskId: existing?.taskId ?? existing?.id,
+                    prescriptionId: existing?.prescriptionId,
+                    focus: group.focus,
+                    text: group.advanced[weeklyGoalSectionIndex].options[0],
+                    level: '加強處方' as const,
+                    category: group.category,
+                  }];
+                })()
+              : [];
+            if (!draft.exerciseTypes.length || !draft.frequency || !draft.duration) return weeklyGoalItems;
             const exerciseTypeSection = findExerciseTypeSection(group);
-            if (!exerciseTypeSection) return [];
-            return draft.exerciseTypes.flatMap((typeValue) => {
+            if (!exerciseTypeSection) return weeklyGoalItems;
+            return [...weeklyGoalItems, ...draft.exerciseTypes.flatMap((typeValue) => {
               const optionIndex = exerciseTypeSection.options.indexOf(typeValue);
               if (optionIndex === -1) return [];
               const resolvedType = typeValue === '其他' ? draft.customExerciseType.trim() : typeValue;
@@ -266,7 +298,7 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
                 category: group.category,
                 exercisePrescription,
               }];
-            });
+            })];
           })()
         : group.advanced.flatMap((section, sectionIndex) =>
         section.options.flatMap((option, optionIndex) => {
@@ -364,6 +396,29 @@ export const GreenPrescriptionModal: React.FC<GreenPrescriptionModalProps> = ({
 
                 <div className="space-y-4">
                   {group.focus === '身體活動' ? group.advanced.map((section) => {
+                    if (section.title === INDIVIDUAL_ADVANCED_TITLE) {
+                      const weeklyGoalChecked = (exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT).weeklyGoal;
+                      return (
+                        <div key={section.title}>
+                          <h4 className="mb-2 text-sm font-bold text-zinc-700">{section.title}</h4>
+                          <div className="space-y-2">
+                            {section.options.map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => toggleWeeklyGoal(group.focus)}
+                                className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left text-xs leading-5 transition-colors ${weeklyGoalChecked ? 'border-[#f08327] bg-orange-50' : 'border-zinc-200 bg-white hover:border-orange-300'}`}
+                              >
+                                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${weeklyGoalChecked ? 'border-[#f08327] bg-[#f08327] text-white' : 'border-zinc-300'}`}>
+                                  {weeklyGoalChecked && <Check className="h-3.5 w-3.5" />}
+                                </span>
+                                <span>{option}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
                     const field = exerciseFieldBySection[section.title];
                     if (!field) return null;
                     const draft = exerciseDrafts[group.focus] ?? EMPTY_EXERCISE_DRAFT;

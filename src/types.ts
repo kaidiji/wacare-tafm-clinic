@@ -13,7 +13,7 @@ export type TaskCategory =
 
 export type StatusLevel = 'good' | 'normal' | 'attention' | 'concern' | 'none';
 
-export type LifestyleFocus = '運動習慣' | '飲食習慣' | '睡眠品質' | '壓力管理' | '戒菸／戒酒／戒檳榔' | '增加人際互動';
+export type LifestyleFocus = '運動習慣' | '飲食習慣' | '睡眠品質' | '壓力管理' | '戒菸 / 戒酒 / 戒檳榔' | '增加人際互動';
 
 export interface QuestionnaireRecord {
   id: string;

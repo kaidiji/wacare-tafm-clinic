@@ -88,10 +88,15 @@ export function reconcileQuestionnairePrescriptions({
   assignedBy: string;
   now: Date;
 }): PrescriptionTask[] {
+  // 只沿用目前 30 天週期內的處方進度；課程任務保留進度，僅更新為新週期日期。
   const existingFromQuestionnaire = caseItem.prescriptions.filter((task) => task.executionKind !== 'course' &&
-    weekStart(new Date(parseQuestionnaireDate(task.startDate))).getTime() === weekStart(now).getTime());
-  const unaffectedTasks = caseItem.prescriptions.filter((task) => task.executionKind === 'course');
-  const endDate = weekEnd(now);
+    isWithinCurrentPeriod(parseQuestionnaireDate(task.startDate), now));
+  const endDate = getPeriodEnd(now);
+  const unaffectedTasks = caseItem.prescriptions.filter((task) => task.executionKind === 'course').map((task) => ({
+    ...task,
+    startDate: formatLocalPrescriptionDate(now),
+    endDate: formatLocalPrescriptionDate(endDate),
+  }));
 
   const uniqueSelections = Array.from(new Map(selections.map((selection) => [selection.definitionId, selection])).values());
   const questionnaireTasks = uniqueSelections.map((selection, index) => {
@@ -213,45 +218,55 @@ export function settleExecutionCycle({ caseItem, now }: { caseItem: CaseItem; no
   };
 }
 
-export function weekStart(date: Date): Date {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (start.getDay() + 6) % 7);
-  return start;
-}
+/** 專家指派處方後開始的綠色處方週期長度（天）。 */
+export const PRESCRIPTION_PERIOD_DAYS = 30;
 
-export function weekEnd(date: Date): Date {
-  const end = weekStart(date);
-  end.setDate(end.getDate() + 6);
+/** 週期最後一天：起始日 + 29 天。 */
+export function getPeriodEnd(start: Date): Date {
+  const end = new Date(start);
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + PRESCRIPTION_PERIOD_DAYS - 1);
   return end;
 }
 
+function getPeriodDueAt(startMs: number): number {
+  const dueAt = new Date(startMs);
+  dueAt.setHours(0, 0, 0, 0);
+  dueAt.setDate(dueAt.getDate() + PRESCRIPTION_PERIOD_DAYS);
+  return dueAt.getTime();
+}
+
+/** 起始日無效時視為不在目前週期內；滿 30 天後才算到期。 */
+function isWithinCurrentPeriod(startMs: number, now: Date): boolean {
+  return Number.isFinite(startMs) && now.getTime() < getPeriodDueAt(startMs);
+}
+
 /**
- * 保留既有呼叫介面：處方與課程皆按週一至週日結算，清單沿用、進度歸零。
+ * 保留既有呼叫介面：專家指派處方後才有 30 天週期，未指派（僅預設課程）不結算。
+ * 到期時把目前週期結算成一筆歷史紀錄，清單與累積進度沿用，並由當下開始新週期。
  */
 export function settleDueCourseOnlyExecutionCycle(caseItem: CaseItem, now: Date): CaseItem {
   const tasks = caseItem.prescriptions;
-  if (tasks.length === 0) return caseItem;
+  const doctorTasks = tasks.filter((task) => task.executionKind !== 'course');
+  if (doctorTasks.length === 0) return caseItem;
 
-  const earliestStart = tasks.reduce(
+  const periodStart = doctorTasks.reduce(
     (earliest, task) => Math.min(earliest, parseQuestionnaireDate(task.startDate)),
     Number.POSITIVE_INFINITY,
   );
-  if (!Number.isFinite(earliestStart)) return caseItem;
+  if (!Number.isFinite(periodStart) || isWithinCurrentPeriod(periodStart, now)) return caseItem;
 
-  if (weekStart(now).getTime() <= weekStart(new Date(earliestStart)).getTime()) return caseItem;
-  const settled = settleExecutionCycle({ caseItem, now: weekEnd(new Date(earliestStart)) });
-  const hasDoctorPrescription = tasks.some((task) => task.executionKind !== 'course');
-  const prescriptions = tasks.filter((task) => hasDoctorPrescription || task.executionKind !== 'course' || !hasExceededUnassignedCourseWindow(settled, now))
-    .map((task) => ({ ...task, completedCount: 0, status: 'active' as const,
-      startDate: formatLocalPrescriptionDate(weekStart(now)), endDate: formatLocalPrescriptionDate(weekEnd(now)) }));
+  const settled = settleExecutionCycle({ caseItem, now: getPeriodEnd(new Date(periodStart)) });
+  const startDate = formatLocalPrescriptionDate(now);
+  const endDate = formatLocalPrescriptionDate(getPeriodEnd(now));
+  const prescriptions = tasks.map((task) => ({ ...task, startDate, endDate }));
   return { ...settled, prescriptions };
 }
 
-const DEFAULT_COURSE_VIDEO_TITLES = ['本週課程影片 1', '本週課程影片 2', '本週課程影片 3'];
+const DEFAULT_COURSE_VIDEO_TITLES = ['本期課程影片 1', '本期課程影片 2', '本期課程影片 3'];
 
 function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
-  const endDate = weekEnd(now);
+  const endDate = getPeriodEnd(now);
   return DEFAULT_COURSE_VIDEO_TITLES.map((title, index) => ({
     id: `default-course-${index + 1}`,
     taskId: `default-course-${index + 1}`,
@@ -261,7 +276,7 @@ function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
     category: '自我管理教育',
     title,
     description: title,
-    frequency: '每週 1 次',
+    frequency: '每期 1 次',
     durationMinutes: 0,
     targetCount: 1,
     completedCount: 0,
@@ -274,7 +289,7 @@ function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
   }));
 }
 
-/** Every case gets 3 weekly course-video tasks by default; unlike prescriptions, these are not doctor-assigned. */
+/** Every case gets 3 course-video tasks per period by default; unlike prescriptions, these are not doctor-assigned. */
 export function ensureDefaultCourseTasks(caseItem: CaseItem, now: Date): PrescriptionTask[] {
   const hasCourseTasks = caseItem.prescriptions.some((task) => task.executionKind === 'course');
   return hasCourseTasks ? caseItem.prescriptions : [...caseItem.prescriptions, ...createDefaultCourseTasks(now)];
@@ -294,8 +309,7 @@ function latestPrescriptionReceivedAt(caseItem: CaseItem): number {
 /**
  * 「未指派處方課程上限」的起算基準 = 個案首次登入時間、最近一次收到處方時間，取兩者中較晚者。
  * 換句話說：只要 3 個月內個案登入過、或收到過新處方，上限就會被往後遞延；
- * 兩者都超過 3 個月未發生，系統才停止繼續產生新一週的預設課程任務
- * （但既有週期仍會照常結算進歷史紀錄，見 settleDueCourseOnlyExecutionCycle）。
+ * 兩者都超過 3 個月未發生，系統才不再為個案補上預設課程任務。
  * 若個案從未登入過（firstLoginAt 不存在）且也從未收到過處方，視為尚無可用基準，不設定上限。
  */
 export function hasExceededUnassignedCourseWindow(caseItem: CaseItem, now: Date): boolean {

@@ -48,11 +48,11 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
     if (!selectedQuestionnaire) return;
 
     const now = new Date();
-    // 跨週先結算；同週保存舊快照但保留現行清單供進度繼承。
+    // 滿 30 天先結算；未到期則保存舊快照，並保留現行清單與累積進度，由此刻開始新的 30 天週期。
     const currentCase = settleDueCourseOnlyExecutionCycle(caseItem, now);
     const settledCase = currentCase === caseItem ? settleExecutionCycle({ caseItem, now }) : currentCase;
     const prescriptions = reconcileQuestionnairePrescriptions({
-      caseItem: { ...currentCase, prescriptions: currentCase.prescriptions.filter((task) => task.executionKind !== 'course') },
+      caseItem: currentCase,
       questionnaire: selectedQuestionnaire,
       selections: items,
       assignedBy: '王志銘醫師',
@@ -179,7 +179,7 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
             <Leaf className="h-5 w-5 text-emerald-600" />
             處方執行紀錄
           </h2>
-          <p className="mt-1 text-xs text-zinc-500">查看本週任務與過往執行週期。</p>
+          <p className="mt-1 text-xs text-zinc-500">查看本期任務與過往執行週期。</p>
         </div>
 
         <CurrentPrescriptionExecution
