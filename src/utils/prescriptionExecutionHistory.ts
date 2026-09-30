@@ -65,8 +65,9 @@ export function calculatePrescriptionExecutionCycleSummary(
   const expertTotal = expertPrescriptions.length;
   const courseCompleted = courses.filter((item) => item.completed).length;
   const courseTotal = courses.length;
-  const completedTotal = expertCompleted + courseCompleted;
-  const totalCount = expertTotal + courseTotal;
+  // 歷史完成率只計算專家處方；課程另列為觀看紀錄。
+  const completedTotal = expertCompleted;
+  const totalCount = expertTotal;
   const incompleteTotal = Math.max(0, totalCount - completedTotal);
   const overallRate = totalCount === 0
     ? 0

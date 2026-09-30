@@ -48,7 +48,7 @@ export const PrescriptionDetail: React.FC<PrescriptionDetailProps> = ({
     if (!selectedQuestionnaire) return;
 
     const now = new Date();
-    // 滿 30 天先結算；未到期則保存舊快照，並保留現行清單與累積進度，由此刻開始新的 30 天週期。
+    // 滿 30 天先結算；醫師重新派發時保存舊快照，並以全新勾選狀態開始新的 30 天週期。
     const currentCase = settleDueCourseOnlyExecutionCycle(caseItem, now);
     const settledCase = currentCase === caseItem ? settleExecutionCycle({ caseItem, now }) : currentCase;
     const prescriptions = reconcileQuestionnairePrescriptions({

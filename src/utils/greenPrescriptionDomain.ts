@@ -88,9 +88,7 @@ export function reconcileQuestionnairePrescriptions({
   assignedBy: string;
   now: Date;
 }): PrescriptionTask[] {
-  // 只沿用目前 30 天週期內的處方進度；課程任務保留進度，僅更新為新週期日期。
-  const existingFromQuestionnaire = caseItem.prescriptions.filter((task) => task.executionKind !== 'course' &&
-    isWithinCurrentPeriod(parseQuestionnaireDate(task.startDate), now));
+  // 醫師重新派發即開始全新 30 天週期；處方進度全部歸零，課程觀看紀錄則保留。
   const endDate = getPeriodEnd(now);
   const unaffectedTasks = caseItem.prescriptions.filter((task) => task.executionKind === 'course').map((task) => ({
     ...task,
@@ -100,28 +98,8 @@ export function reconcileQuestionnairePrescriptions({
 
   const uniqueSelections = Array.from(new Map(selections.map((selection) => [selection.definitionId, selection])).values());
   const questionnaireTasks = uniqueSelections.map((selection, index) => {
-    const existing = existingFromQuestionnaire.find((task) => task.definitionId === selection.definitionId && task.prescriptionFocus === selection.focus);
-    const prescriptionId = selection.prescriptionId ?? existing?.prescriptionId ?? `prescription-${questionnaire.id}`;
-    const taskId = selection.taskId ?? existing?.taskId ?? existing?.id ?? `task-${questionnaire.id}-${now.getTime()}-${index}`;
-    if (existing) {
-      return {
-        ...existing,
-        id: taskId,
-        taskId,
-        prescriptionId,
-        definitionId: selection.definitionId,
-        executionKind: 'prescription' as const,
-        title: selection.text,
-        description: selection.text,
-        exercisePrescription: selection.exercisePrescription,
-        startDate: formatLocalPrescriptionDate(now),
-        endDate: formatLocalPrescriptionDate(endDate),
-        sourceQuestionnaireId: questionnaire.id,
-        assignedBy,
-        sourceQuestionnaireTitle: questionnaire.title,
-        sourceQuestionnaireSubmittedAt: questionnaire.submittedAt,
-      };
-    }
+    const prescriptionId = selection.prescriptionId ?? `prescription-${questionnaire.id}-${now.getTime()}`;
+    const taskId = selection.taskId ?? `task-${questionnaire.id}-${now.getTime()}-${index}`;
 
     return {
       id: taskId,
@@ -263,7 +241,7 @@ export function settleDueCourseOnlyExecutionCycle(caseItem: CaseItem, now: Date)
   return { ...settled, prescriptions };
 }
 
-const DEFAULT_COURSE_VIDEO_TITLES = ['本期課程影片 1', '本期課程影片 2', '本期課程影片 3'];
+const DEFAULT_COURSE_VIDEO_TITLES = ['本期推薦影片 1', '本期推薦影片 2', '本期推薦影片 3', '本期推薦影片 4', '本期推薦影片 5'];
 
 function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
   const endDate = getPeriodEnd(now);
@@ -289,10 +267,16 @@ function createDefaultCourseTasks(now: Date): PrescriptionTask[] {
   }));
 }
 
-/** Every case gets 3 course-video tasks per period by default; unlike prescriptions, these are not doctor-assigned. */
+/** Every case gets 5 recommended videos per period; the viewing suggestion remains at least 3 per month. */
 export function ensureDefaultCourseTasks(caseItem: CaseItem, now: Date): PrescriptionTask[] {
-  const hasCourseTasks = caseItem.prescriptions.some((task) => task.executionKind === 'course');
-  return hasCourseTasks ? caseItem.prescriptions : [...caseItem.prescriptions, ...createDefaultCourseTasks(now)];
+  const courseTasks = caseItem.prescriptions.filter((task) => task.executionKind === 'course');
+  if (courseTasks.length >= DEFAULT_COURSE_VIDEO_TITLES.length) return caseItem.prescriptions;
+
+  const existingIds = new Set(caseItem.prescriptions.map((task) => task.id));
+  const missingCourses = createDefaultCourseTasks(now)
+    .filter((task) => !existingIds.has(task.id))
+    .slice(0, DEFAULT_COURSE_VIDEO_TITLES.length - courseTasks.length);
+  return [...caseItem.prescriptions, ...missingCourses];
 }
 
 const MAX_UNASSIGNED_COURSE_MONTHS = 3;

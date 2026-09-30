@@ -54,11 +54,11 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-black text-zinc-900">{cycle.startDate} – {cycle.endDate}</p>
-                  <p className="mt-2 text-sm font-bold text-zinc-800">整體達成率 {summary.overallRate}%</p>
-                  <p className="mt-1 text-xs text-zinc-500">已完成 {summary.completedTotal} 項｜未完成 {summary.incompleteTotal} 項</p>
+                  <p className="mt-2 text-sm font-bold text-zinc-800">處方完成率 {summary.overallRate}%</p>
+                  <p className="mt-1 text-xs text-zinc-500">處方已完成 {summary.completedTotal} 項｜未完成 {summary.incompleteTotal} 項</p>
                   <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs font-bold text-zinc-700">
                     <span>專家處方 {summary.expertCompleted} / {summary.expertTotal}</span>
-                    <span>課程 {summary.courseCompleted} / {summary.courseTotal}</span>
+                    <span>影片觀看紀錄 {summary.courseCompleted} 部</span>
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
@@ -98,7 +98,7 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
 
                   {summary.courseTotal > 0 && (
                     <section className={summary.expertTotal > 0 ? 'mt-5 border-t border-zinc-100 pt-4' : ''}>
-                      <h4 className="text-sm font-black text-zinc-900">課程 {summary.courseCompleted} / {summary.courseTotal}</h4>
+                      <h4 className="text-sm font-black text-zinc-900">影片觀看紀錄</h4>
                       <div className="mt-3 space-y-1.5">
                         {courses.filter((course) => course.title?.trim()).map((course) => (
                           <p key={course.id} className="flex min-w-0 items-start gap-2 text-xs text-zinc-700">

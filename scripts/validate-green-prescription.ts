@@ -43,20 +43,20 @@ const fixedNow = new Date(2026, 8, 9, 10, 0);
 const firstPrototypeSession = createPrototypeCases(INITIAL_CASES, fixedNow);
 firstPrototypeSession[0].prescriptions = [];
 const refreshedPrototypeSession = createPrototypeCases(INITIAL_CASES, fixedNow);
-assert.equal(refreshedPrototypeSession[0].prescriptions.length, INITIAL_CASES[0].prescriptions.length + 3);
+assert.equal(refreshedPrototypeSession[0].prescriptions.length, INITIAL_CASES[0].prescriptions.length + 5);
 assert.equal(refreshedPrototypeSession[0].questionnaireHistory?.length, INITIAL_CASES[0].questionnaireHistory?.length);
 assert.notEqual(firstPrototypeSession, refreshedPrototypeSession);
 assert.notEqual(firstPrototypeSession[0], refreshedPrototypeSession[0]);
 
-// 每個個案預設每週應有 3 部課程影片任務(0/3)，非醫師指派
+// 每個個案固定推薦 5 部影片；每月建議至少觀看 3 部，且影片不列入處方完成率
 const defaultCourseTasks = refreshedPrototypeSession[0].prescriptions.filter((task) => task.executionKind === 'course');
-assert.equal(defaultCourseTasks.length, 3);
+assert.equal(defaultCourseTasks.length, 5);
 assert.equal(defaultCourseTasks.every((task) => task.targetCount === 1 && task.completedCount === 0), true);
 assert.equal(defaultCourseTasks.every((task) => task.assignedBy === '系統預設'), true);
 
-// 補課程任務是「補齊到 3 筆」而非每次重算都疊加，重跑一次不應變成 6 筆
+// 補課程任務是「補齊到 5 筆」而非每次重算都疊加
 const remigratedCase = migrateCaseItem(refreshedPrototypeSession[0], fixedNow);
-assert.equal(remigratedCase.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+assert.equal(remigratedCase.prescriptions.filter((task) => task.executionKind === 'course').length, 5);
 
 // 尚未經醫師指派前，個案本身沒有處方任務，只有預設課程，避免使用者誤以為已經指派過
 const currentSummary = calculateCurrentGreenPrescriptionSummary({
@@ -66,9 +66,9 @@ assert.deepEqual(currentSummary, {
   prescriptionCompleted: 0,
   prescriptionTotal: 0,
   courseCompleted: 0,
-  courseTotal: 3,
+  courseTotal: 5,
   completedTotal: 0,
-  totalCount: 3,
+  totalCount: 0,
   overallRate: 0,
 });
 assert.equal(groupCurrentPrescriptionTasks(refreshedPrototypeSession[0].prescriptions).length, 0);
@@ -80,10 +80,10 @@ assert.deepEqual(calculatePrescriptionExecutionCycleSummary(demoExecutionCycle),
   expertTotal: 15,
   courseCompleted: 2,
   courseTotal: 3,
-  completedTotal: 10,
-  totalCount: 18,
-  incompleteTotal: 8,
-  overallRate: 56,
+  completedTotal: 8,
+  totalCount: 15,
+  incompleteTotal: 7,
+  overallRate: 53,
 });
 assert.equal(getHistoryCategoryLabel('harmful_substance_avoidance'), '戒菸／戒酒／戒檳榔');
 assert.deepEqual(
@@ -217,11 +217,11 @@ const editedActivityAssignment = reconcileQuestionnairePrescriptions({
 const editedActivityAdvanced = editedActivityAssignment.filter((task) => task.prescriptionLevel === '加強處方');
 assert.equal(editedActivityAssignment.length, 2);
 assert.equal(editedActivityAdvanced.length, 1);
-assert.equal(editedActivityAdvanced[0].id, activityAdvanced[0].id);
-assert.equal(editedActivityAdvanced[0].taskId, activityAdvanced[0].taskId);
-assert.equal(editedActivityAdvanced[0].prescriptionId, activityAdvanced[0].prescriptionId);
-assert.equal(editedActivityAdvanced[0].completedCount, 1);
-assert.equal(editedActivityAdvanced[0].assignedAt, activityAdvanced[0].assignedAt);
+assert.notEqual(editedActivityAdvanced[0].id, activityAdvanced[0].id);
+assert.notEqual(editedActivityAdvanced[0].taskId, activityAdvanced[0].taskId);
+assert.notEqual(editedActivityAdvanced[0].prescriptionId, activityAdvanced[0].prescriptionId);
+assert.equal(editedActivityAdvanced[0].completedCount, 0);
+assert.notEqual(editedActivityAdvanced[0].assignedAt, activityAdvanced[0].assignedAt);
 assert.deepEqual(editedActivityAdvanced[0].exercisePrescription, editedExercisePrescription);
 assert.equal(editedActivityAdvanced[0].description, '每週 3~4 天中進行30-60分鐘的重量訓練');
 const editedActivitySummary = calculateCurrentGreenPrescriptionSummary({ tasks: editedActivityAssignment });
@@ -279,11 +279,11 @@ const reassignment = reconcileQuestionnairePrescriptions({
   now: new Date(2026, 8, 10, 10, 0),
 });
 assert.equal(reassignment.length, 4);
-assert.equal(reassignment[0].id, progressed[0].id);
-assert.equal(reassignment[0].taskId, progressed[0].taskId);
-assert.equal(reassignment[0].prescriptionId, progressed[0].prescriptionId);
-assert.equal(reassignment[0].completedCount, 1);
-assert.equal(reassignment[0].assignedAt, progressed[0].assignedAt);
+assert.notEqual(reassignment[0].id, progressed[0].id);
+assert.notEqual(reassignment[0].taskId, progressed[0].taskId);
+assert.notEqual(reassignment[0].prescriptionId, progressed[0].prescriptionId);
+assert.equal(reassignment[0].completedCount, 0);
+assert.notEqual(reassignment[0].assignedAt, progressed[0].assignedAt);
 assert.equal(reassignment[0].title, '更新後的相同處方顯示名稱');
 assert.equal(reassignment[0].sourceQuestionnaireId, questionnaire.id);
 assert.equal(reassignment[0].sourceQuestionnaireSubmittedAt, questionnaire.submittedAt);
@@ -427,7 +427,7 @@ assert.equal(settledCourseOnly.prescriptions.length, 0);
 assert.equal(settledCourseOnly.executionHistory?.length, (courseOnlyProgressed.executionHistory?.length ?? 0) + 1);
 const settledCourseCycle = settledCourseOnly.executionHistory![settledCourseOnly.executionHistory!.length - 1];
 assert.equal(settledCourseCycle.expertPrescriptions.length, 0);
-assert.equal(settledCourseCycle.courses.length, 3);
+assert.equal(settledCourseCycle.courses.length, 5);
 assert.equal(settledCourseCycle.courses.filter((course) => course.completed).length, 1);
 assert.equal(settledCourseCycle.assignedBy, undefined);
 assert.equal(settledCourseCycle.startDate, '2026/09/09');
@@ -445,7 +445,7 @@ const settledMixed = settleExecutionCycle({ caseItem: mixedCase, now: new Date(2
 const settledMixedCycle = settledMixed.executionHistory![settledMixed.executionHistory!.length - 1];
 assert.equal(settledMixedCycle.expertPrescriptions.length, firstAssignment.length);
 assert.equal(settledMixedCycle.expertPrescriptions.filter((item) => item.completed).length, 1);
-assert.equal(settledMixedCycle.courses.length, 3);
+assert.equal(settledMixedCycle.courses.length, 5);
 assert.equal(settledMixedCycle.assignedBy, '測試醫師');
 assert.equal(settledMixed.prescriptions.length, 0);
 
@@ -486,7 +486,7 @@ assert.equal(settleDueCourseOnlyExecutionCycle(periodSettled, new Date(2026, 9, 
 // migrateCaseItem 載入個案時：純課程個案不會因為時間經過而結算
 const migratedAfterAMonth = migrateCaseItem(courseOnlyForPeriod, new Date(2026, 9, 9, 8, 0));
 assert.equal(migratedAfterAMonth.executionHistory?.length, 0);
-assert.equal(migratedAfterAMonth.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+assert.equal(migratedAfterAMonth.prescriptions.filter((task) => task.executionKind === 'course').length, 5);
 
 // 重新指派時課程任務保留進度，並改用新週期日期
 const courseProgressedCase = {
@@ -501,8 +501,8 @@ const assignedWithCourses = reconcileQuestionnairePrescriptions({
   now: new Date(2026, 8, 24, 10, 0),
 });
 const carriedCourses = assignedWithCourses.filter((task) => task.executionKind === 'course');
-assert.equal(carriedCourses.length, 3);
-assert.deepEqual(carriedCourses.map((task) => task.completedCount), [1, 0, 0]);
+assert.equal(carriedCourses.length, 5);
+assert.deepEqual(carriedCourses.map((task) => task.completedCount), [1, 0, 0, 0, 0]);
 assert.equal(carriedCourses.every((task) => task.startDate === '2026/09/24' && task.endDate === '2026/10/23'), true);
 assert.equal(getCurrentPeriodRangeLabel(assignedWithCourses), '2026/09/24（四）～2026/10/23（五）');
 
@@ -519,9 +519,9 @@ const newlyAssigned = reconcileQuestionnairePrescriptions({
 });
 const afterAssignmentPrescriptions = ensureDefaultCourseTasks({ ...settledBeforeAssignment, prescriptions: newlyAssigned }, assignmentNow);
 assert.equal(settledBeforeAssignment.executionHistory?.length, 1);
-assert.equal(settledBeforeAssignment.executionHistory![0].courses.length, 3);
+assert.equal(settledBeforeAssignment.executionHistory![0].courses.length, 5);
 assert.equal(settledBeforeAssignment.executionHistory![0].assignedBy, undefined);
-assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind === 'course').length, 3);
+assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind === 'course').length, 5);
 assert.equal(afterAssignmentPrescriptions.filter((task) => task.executionKind !== 'course').length, selections.length);
 
 // ---- 未指派處方課程上限：起算基準 = 首次登入(firstLoginAt) 與 最近一次收到處方時間，取較晚者 ----
@@ -567,27 +567,27 @@ assert.equal(migratedPastCutoff.prescriptions.length, 0);
 
 // 純課程（未指派處方）不啟動週期，因此跨過上限界線也不會結算或清除既有課程任務
 const idleCaseBeforeCutoff = migrateCaseItem(neverAssignedCase, new Date(2026, 9, 10, 9, 0));
-assert.equal(idleCaseBeforeCutoff.prescriptions.filter((task) => task.executionKind === 'course').length, 3);
+assert.equal(idleCaseBeforeCutoff.prescriptions.filter((task) => task.executionKind === 'course').length, 5);
 assert.equal(settleDueCourseOnlyExecutionCycle(idleCaseBeforeCutoff, new Date(2026, 9, 20, 9, 0)), idleCaseBeforeCutoff);
 
-// 最近一次現行處方限定：移除後再加入不回溯舊紀錄；跨問卷仍可繼承（同一 30 天週期內）。
+// 醫師每次重新指派都開始新週期，即使處方相同也不繼承完成進度。
 const sixSelections = Array.from({ length: 6 }, (_, index) => ({ ...selections[0], definitionId: `A${index + 1}`, text: `A${index + 1}` }));
 const mondayTasks = reconcileQuestionnairePrescriptions({ caseItem: emptyCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 14, 9) })
   .map((task) => ({ ...task, completedCount: 1 }));
 const thursdayTasks = reconcileQuestionnairePrescriptions({ caseItem: { ...emptyCase, prescriptions: mondayTasks }, questionnaire: { ...questionnaire, id: 'thursday' }, selections: sixSelections.slice(0, 4), assignedBy: '測試醫師', now: new Date(2026, 8, 17, 9) });
 assert.equal(thursdayTasks.length, 4);
-assert.equal(thursdayTasks.every((task) => task.completedCount === 1 && task.sourceQuestionnaireId === 'thursday'), true);
+assert.equal(thursdayTasks.every((task) => task.completedCount === 0 && task.sourceQuestionnaireId === 'thursday'), true);
 const sundayTasks = reconcileQuestionnairePrescriptions({ caseItem: { ...emptyCase, prescriptions: thursdayTasks }, questionnaire: { ...questionnaire, id: 'sunday' }, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 8, 20, 9) });
-assert.deepEqual(sundayTasks.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
+assert.deepEqual(sundayTasks.map((task) => task.completedCount), [0, 0, 0, 0, 0, 0]);
 // 每次指派都由當天開始新的 30 天週期
 assert.equal(sundayTasks.every((task) => task.startDate === '2026/09/20' && task.endDate === '2026/10/19'), true);
 const nextPeriodCase = settleDueCourseOnlyExecutionCycle({ ...emptyCase, prescriptions: sundayTasks, executionHistory: [] }, new Date(2026, 9, 20, 0, 1));
 assert.equal(nextPeriodCase.executionHistory?.[0].endDate, '2026/10/19');
 assert.equal(nextPeriodCase.prescriptions.length, 6);
 // 到期後累積進度保留，僅更新為新週期日期
-assert.deepEqual(nextPeriodCase.prescriptions.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
+assert.deepEqual(nextPeriodCase.prescriptions.map((task) => task.completedCount), [0, 0, 0, 0, 0, 0]);
 assert.equal(nextPeriodCase.prescriptions.every((task) => task.startDate === '2026/10/20' && task.endDate === '2026/11/18'), true);
 assert.equal(settleDueCourseOnlyExecutionCycle(nextPeriodCase, new Date(2026, 9, 20, 1)), nextPeriodCase);
 const nextAssignment = reconcileQuestionnairePrescriptions({ caseItem: nextPeriodCase, questionnaire, selections: sixSelections, assignedBy: '測試醫師', now: new Date(2026, 9, 20, 1) });
-assert.deepEqual(nextAssignment.map((task) => task.completedCount), [1, 1, 1, 1, 0, 0]);
+assert.deepEqual(nextAssignment.map((task) => task.completedCount), [0, 0, 0, 0, 0, 0]);
 console.log('green prescription validation: PASS');

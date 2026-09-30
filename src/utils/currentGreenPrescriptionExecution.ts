@@ -49,8 +49,9 @@ export function calculateCurrentGreenPrescriptionSummary({
   ).length;
   const prescriptionTotal = prescriptions.length;
   const courseTotal = courses.length;
-  const completedTotal = prescriptionCompleted + courseCompleted;
-  const totalCount = prescriptionTotal + courseTotal;
+  // 課程影片只保存觀看紀錄，不列入生活型態處方完成率。
+  const completedTotal = prescriptionCompleted;
+  const totalCount = prescriptionTotal;
   const overallRate = totalCount === 0
     ? 0
     : Math.min(100, Math.max(0, Math.round((completedTotal / totalCount) * 100)));

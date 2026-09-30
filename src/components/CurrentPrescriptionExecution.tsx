@@ -47,17 +47,22 @@ export const CurrentPrescriptionExecution: React.FC<CurrentPrescriptionExecution
       <div className="rounded-xl border border-zinc-200 bg-white p-5">
         <h3 className="text-sm font-black text-zinc-900">本期綠色處方</h3>
         {periodRange && <p className="mt-1 text-sm font-medium text-zinc-500" aria-label="本期任務週期">{periodRange}</p>}
-        <div className="mt-3 flex items-end gap-3">
-          <span className="text-3xl font-black tracking-tight text-zinc-900">{summary.completedTotal} / {summary.totalCount}</span>
-          <span className="pb-1 text-sm font-bold text-zinc-500">{summary.overallRate}%</span>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100">
-          <div className="h-full rounded-full bg-[#f08327]" style={{ width: `${summary.overallRate}%` }} />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 text-xs font-bold text-zinc-600">
-          <span>生活型態處方 {summary.prescriptionCompleted} / {summary.prescriptionTotal}</span>
-          <span>課程 {summary.courseCompleted} / {summary.courseTotal}</span>
-        </div>
+        {prescriptions.length > 0 ? (
+          <>
+            <div className="mt-3 flex items-end gap-3">
+              <span className="text-3xl font-black tracking-tight text-zinc-900">{summary.completedTotal} / {summary.totalCount}</span>
+              <span className="pb-1 text-sm font-bold text-zinc-500">{summary.overallRate}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100">
+              <div className="h-full rounded-full bg-[#f08327]" style={{ width: `${summary.overallRate}%` }} />
+            </div>
+            <div className="mt-3 text-xs font-bold text-zinc-600">
+              生活型態處方 {summary.prescriptionCompleted} / {summary.prescriptionTotal}
+            </div>
+          </>
+        ) : (
+          <p className="mt-3 text-sm font-medium text-zinc-500">尚未指派處方</p>
+        )}
       </div>
 
       <div className="mt-4 space-y-4" aria-label="任務執行清單">
@@ -83,8 +88,8 @@ export const CurrentPrescriptionExecution: React.FC<CurrentPrescriptionExecution
         {courses.length > 0 && (
           <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
             <div className="flex items-center justify-between gap-3 pb-1">
-              <h4 className="text-sm font-black text-zinc-900">課程</h4>
-              <span className="shrink-0 text-xs font-bold text-zinc-500">{summary.courseCompleted} / {summary.courseTotal}</span>
+              <h4 className="text-sm font-black text-zinc-900">推薦影片</h4>
+              <span className="shrink-0 text-xs font-bold text-zinc-500">本月建議至少觀看 3 部</span>
             </div>
             <div>{courses.map((course) => <TaskRow key={course.id} task={course} />)}</div>
           </section>
