@@ -5,6 +5,7 @@ import {
   calculateCurrentExecutionTaskProgress,
   calculateCurrentGreenPrescriptionSummary,
   getCurrentPeriodRangeLabel,
+  getViewedCourseTasks,
   groupCurrentPrescriptionTasks,
 } from '../utils/currentGreenPrescriptionExecution';
 
@@ -34,7 +35,7 @@ const TaskRow: React.FC<{ task: Pick<PrescriptionTask, 'id' | 'title' | 'targetC
 
 export const CurrentPrescriptionExecution: React.FC<CurrentPrescriptionExecutionProps> = ({ tasks }) => {
   const prescriptions = useMemo(() => tasks.filter((task) => task.executionKind !== 'course'), [tasks]);
-  const courses = useMemo(() => tasks.filter((task) => task.executionKind === 'course'), [tasks]);
+  const viewedCourses = useMemo(() => getViewedCourseTasks(tasks), [tasks]);
   const summary = useMemo(
     () => calculateCurrentGreenPrescriptionSummary({ tasks }),
     [tasks],
@@ -85,13 +86,13 @@ export const CurrentPrescriptionExecution: React.FC<CurrentPrescriptionExecution
           })
         )}
 
-        {courses.length > 0 && (
+        {viewedCourses.length > 0 && (
           <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
             <div className="flex items-center justify-between gap-3 pb-1">
-              <h4 className="text-sm font-black text-zinc-900">推薦影片</h4>
-              <span className="shrink-0 text-xs font-bold text-zinc-500">本月建議至少觀看 3 部</span>
+              <h4 className="text-sm font-black text-zinc-900">影片觀看紀錄</h4>
+              <span className="shrink-0 text-xs font-bold text-zinc-500">已觀看 {viewedCourses.length} 部</span>
             </div>
-            <div>{courses.map((course) => <TaskRow key={course.id} task={course} />)}</div>
+            <div>{viewedCourses.map((course) => <TaskRow key={course.id} task={course} />)}</div>
           </section>
         )}
       </div>

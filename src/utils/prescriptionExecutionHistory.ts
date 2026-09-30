@@ -1,4 +1,4 @@
-import { HistoricalPrescriptionItem, PrescriptionExecutionCycle } from '../types';
+import { HistoricalCourseItem, HistoricalPrescriptionItem, PrescriptionExecutionCycle } from '../types';
 
 export const HISTORY_CATEGORY_ORDER = [
   '飲食習慣',
@@ -83,6 +83,11 @@ export function calculatePrescriptionExecutionCycleSummary(
     incompleteTotal,
     overallRate,
   };
+}
+
+/** 專家端歷史明細只呈現實際看過的影片。 */
+export function getViewedHistoricalCourses(courses: HistoricalCourseItem[]): HistoricalCourseItem[] {
+  return courses.filter((course) => course.completed);
 }
 
 const parseCycleDate = (value: string): number => {

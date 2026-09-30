@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { PrescriptionExecutionCycle } from '../types';
 import {
   calculatePrescriptionExecutionCycleSummary,
+  getViewedHistoricalCourses,
   groupHistoricalPrescriptions,
   sortPrescriptionExecutionCycles,
 } from '../utils/prescriptionExecutionHistory';
@@ -34,9 +35,9 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
           const summary = calculatePrescriptionExecutionCycleSummary(cycle);
           const prescriptionGroups = groupHistoricalPrescriptions(cycle.expertPrescriptions ?? []);
           const courses = Array.isArray(cycle.courses) ? cycle.courses : [];
+          const viewedCourses = getViewedHistoricalCourses(courses);
           const expanded = expandedCycleIds.has(cycle.id);
-          const untitledCompletedCourses = courses.filter((course) => course.completed && !course.title?.trim()).length;
-          const untitledIncompleteCourses = courses.filter((course) => !course.completed && !course.title?.trim()).length;
+          const untitledViewedCourses = viewedCourses.filter((course) => !course.title?.trim()).length;
 
           return (
             <article
@@ -96,23 +97,18 @@ export const PrescriptionExecutionHistory: React.FC<PrescriptionExecutionHistory
                     </section>
                   )}
 
-                  {summary.courseTotal > 0 && (
+                  {viewedCourses.length > 0 && (
                     <section className={summary.expertTotal > 0 ? 'mt-5 border-t border-zinc-100 pt-4' : ''}>
                       <h4 className="text-sm font-black text-zinc-900">影片觀看紀錄</h4>
                       <div className="mt-3 space-y-1.5">
-                        {courses.filter((course) => course.title?.trim()).map((course) => (
+                        {viewedCourses.filter((course) => course.title?.trim()).map((course) => (
                           <p key={course.id} className="flex min-w-0 items-start gap-2 text-xs text-zinc-700">
-                            <span className={`mt-px shrink-0 font-black ${course.completed ? 'text-emerald-600' : 'text-zinc-500'}`} aria-hidden="true">
-                              {course.completed ? '✓' : '×'}
-                            </span>
+                            <span className="mt-px shrink-0 font-black text-emerald-600" aria-hidden="true">✓</span>
                             <span className="min-w-0 break-words">{course.title}</span>
                           </p>
                         ))}
-                        {untitledCompletedCourses > 0 && (
-                          <p className="text-xs text-zinc-600">已完成觀看影片 {untitledCompletedCourses} 部</p>
-                        )}
-                        {untitledIncompleteCourses > 0 && (
-                          <p className="text-xs text-zinc-600">未達成觀看影片 {untitledIncompleteCourses} 部</p>
+                        {untitledViewedCourses > 0 && (
+                          <p className="text-xs text-zinc-600">已完成觀看影片 {untitledViewedCourses} 部</p>
                         )}
                       </div>
                     </section>

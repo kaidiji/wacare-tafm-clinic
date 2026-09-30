@@ -23,12 +23,14 @@ import { QuestionnaireRecord } from '../src/types';
 import {
   calculatePrescriptionExecutionCycleSummary,
   getHistoryCategoryLabel,
+  getViewedHistoricalCourses,
   groupHistoricalPrescriptions,
   sortPrescriptionExecutionCycles,
 } from '../src/utils/prescriptionExecutionHistory';
 import {
   calculateCurrentGreenPrescriptionSummary,
   getCurrentPeriodRangeLabel,
+  getViewedCourseTasks,
   groupCurrentPrescriptionTasks,
 } from '../src/utils/currentGreenPrescriptionExecution';
 
@@ -72,6 +74,11 @@ assert.deepEqual(currentSummary, {
   overallRate: 0,
 });
 assert.equal(groupCurrentPrescriptionTasks(refreshedPrototypeSession[0].prescriptions).length, 0);
+assert.equal(getViewedCourseTasks(refreshedPrototypeSession[0].prescriptions).length, 0);
+const oneViewedCourse = refreshedPrototypeSession[0].prescriptions.map((task) => (
+  task.id === defaultCourseTasks[0].id ? { ...task, completedCount: 1 } : task
+));
+assert.equal(getViewedCourseTasks(oneViewedCourse).length, 1);
 
 const demoExecutionCycle = refreshedPrototypeSession[0].executionHistory?.[0];
 assert.ok(demoExecutionCycle);
@@ -85,6 +92,8 @@ assert.deepEqual(calculatePrescriptionExecutionCycleSummary(demoExecutionCycle),
   incompleteTotal: 7,
   overallRate: 53,
 });
+assert.equal(getViewedHistoricalCourses(demoExecutionCycle.courses).length, 2);
+assert.equal(getViewedHistoricalCourses(demoExecutionCycle.courses).every((course) => course.completed), true);
 assert.equal(getHistoryCategoryLabel('harmful_substance_avoidance'), '戒菸／戒酒／戒檳榔');
 assert.deepEqual(
   groupHistoricalPrescriptions(demoExecutionCycle.expertPrescriptions).map((group) => group.label),

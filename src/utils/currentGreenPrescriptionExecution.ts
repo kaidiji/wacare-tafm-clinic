@@ -66,6 +66,14 @@ export function calculateCurrentGreenPrescriptionSummary({
   };
 }
 
+/** 專家端只列出已有觀看紀錄的影片，不顯示尚未觀看的預設推薦項目。 */
+export function getViewedCourseTasks(tasks: PrescriptionTask[]): PrescriptionTask[] {
+  return tasks.filter(
+    (task) => task.executionKind === 'course'
+      && calculateCurrentExecutionTaskProgress(task).completedCount > 0,
+  );
+}
+
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 const parsePeriodDate = (value: string): Date | null => {
